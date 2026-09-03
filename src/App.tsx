@@ -12,6 +12,12 @@ type TipoEntrada =
   | 'veiculo'
   | 'peca';
 
+type TipoPeca =
+  | 'bomba'
+  | 'bico'
+  | 'turbina'
+  | 'outro';
+
 type VeiculoEncontrado = {
   id: string;
   placa: string | null;
@@ -27,6 +33,8 @@ type DadosSalvos = {
   placa: string;
   modelo: string;
   frota: string;
+
+  tiposPeca: TipoPeca[];
 
   descricaoPeca: string;
 
@@ -87,7 +95,7 @@ function App() {
     useState<File | null>(null);
 
   // ==========================================
-  // VEÍCULO
+  // VEÍCULO / VEÍCULO DA PEÇA
   // ==========================================
 
   const [placa, setPlaca] =
@@ -100,7 +108,14 @@ function App() {
     useState('');
 
   // ==========================================
-  // PEÇA
+  // TIPOS DE PEÇA
+  // ==========================================
+
+  const [tiposPeca, setTiposPeca] =
+    useState<TipoPeca[]>([]);
+
+  // ==========================================
+  // DESCRIÇÃO DA PEÇA
   // ==========================================
 
   const [descricaoPeca, setDescricaoPeca] =
@@ -288,6 +303,8 @@ function App() {
 
         frota,
 
+        tiposPeca,
+
         descricaoPeca,
 
         cliente,
@@ -341,6 +358,7 @@ function App() {
         dados.placa.trim() ||
         dados.modelo.trim() ||
         dados.frota.trim() ||
+        dados.tiposPeca.length > 0 ||
         dados.descricaoPeca.trim() ||
         dados.cliente.trim() ||
         dados.telefone.trim() ||
@@ -397,7 +415,7 @@ function App() {
         const dados =
           JSON.parse(
             salvo
-          ) as DadosSalvos;
+          ) as Partial<DadosSalvos>;
 
         // ======================================
         // TIPO
@@ -426,6 +444,16 @@ function App() {
 
         setFrota(
           dados.frota || ''
+        );
+
+        // ======================================
+        // TIPOS DE PEÇA
+        // ======================================
+
+        setTiposPeca(
+          Array.isArray(dados.tiposPeca)
+            ? dados.tiposPeca
+            : []
         );
 
         // ======================================
@@ -589,6 +617,7 @@ function App() {
     placa,
     modelo,
     frota,
+    tiposPeca,
     descricaoPeca,
     cliente,
     telefone,
@@ -994,6 +1023,10 @@ function App() {
       tipo === 'veiculo'
     ) {
 
+      setTiposPeca(
+        []
+      );
+
       setDescricaoPeca(
         ''
       );
@@ -1022,6 +1055,34 @@ function App() {
         false
       );
     }
+  }
+
+  // ==========================================
+  // SELECIONAR / DESELECIONAR PEÇA
+  // ==========================================
+
+  function alternarTipoPeca(
+    tipo: TipoPeca
+  ) {
+
+    setTiposPeca(
+      atual => {
+
+        if (
+          atual.includes(tipo)
+        ) {
+
+          return atual.filter(
+            item => item !== tipo
+          );
+        }
+
+        return [
+          ...atual,
+          tipo,
+        ];
+      }
+    );
   }
 
   // ==========================================
@@ -1058,6 +1119,10 @@ function App() {
       ''
     );
 
+    setTiposPeca(
+      []
+    );
+
     setDescricaoPeca(
       ''
     );
@@ -1072,6 +1137,10 @@ function App() {
 
     setObservacao(
       ''
+    );
+
+    setTipoEntrada(
+      'veiculo'
     );
 
     ultimaPlacaConsultada.current =
@@ -1103,6 +1172,33 @@ function App() {
 
       cameraInput2Ref.current.value =
         '';
+    }
+  }
+
+  // ==========================================
+  // NOME VISUAL DA PEÇA
+  // ==========================================
+
+  function nomeTipoPeca(
+    tipo: TipoPeca
+  ) {
+
+    switch (tipo) {
+
+      case 'bomba':
+        return 'BOMBA';
+
+      case 'bico':
+        return 'BICO';
+
+      case 'turbina':
+        return 'TURBINA';
+
+      case 'outro':
+        return 'OUTRO';
+
+      default:
+        return tipo;
     }
   }
 
@@ -1183,6 +1279,17 @@ function App() {
     ) {
 
       if (
+        tiposPeca.length === 0
+      ) {
+
+        alert(
+          'Selecione pelo menos um tipo de peça.'
+        );
+
+        return;
+      }
+
+      if (
         !descricaoPeca.trim()
       ) {
 
@@ -1198,7 +1305,7 @@ function App() {
       ) {
 
         alert(
-          'Digite o modelo ou código da peça.'
+          'Digite o modelo do veículo onde a peça está aplicada.'
         );
 
         return;
@@ -1221,7 +1328,7 @@ function App() {
     }
 
     // ========================================
-    // TELEFONE NÃO É MAIS OBRIGATÓRIO
+    // TELEFONE NÃO É OBRIGATÓRIO
     // ========================================
 
     setEnviando(
@@ -1400,24 +1507,44 @@ function App() {
           tipoEntrada,
 
         placa:
-          tipoEntrada === 'veiculo'
+          placa.trim()
             ? placa
                 .trim()
                 .toUpperCase()
             : null,
 
+        // Para veículo:
+        // modelo = modelo do veículo
+        //
+        // Para peça:
+        // modelo = modelo do veículo
+        // onde a peça está aplicada.
         modelo:
           modelo.trim() ||
           null,
 
         frota:
-          tipoEntrada === 'veiculo' &&
           frota.trim()
             ? frota.trim()
             : null,
 
+        // Mantemos tipo_peca para compatibilidade
+        // com registros antigos.
+        //
+        // Quando houver mais de uma peça,
+        // gravamos todas separadas por vírgula.
         tipo_peca:
-          null,
+          tipoEntrada === 'peca'
+            ? tiposPeca
+                .map(nomeTipoPeca)
+                .join(', ')
+            : null,
+
+        // NOVO CAMPO
+        tipos_peca:
+          tipoEntrada === 'peca'
+            ? tiposPeca
+            : [],
 
         descricao_peca:
           tipoEntrada === 'peca'
@@ -1518,7 +1645,9 @@ function App() {
       alert(
         tipoEntrada === 'veiculo'
           ? 'Entrada do veículo registrada com as duas fotos!'
-          : 'Entrada da peça registrada com sucesso!'
+          : tiposPeca.length > 1
+            ? `Entrada registrada com ${tiposPeca.length} peças selecionadas!`
+            : 'Entrada da peça registrada com sucesso!'
       );
 
       // ======================================
@@ -1817,57 +1946,53 @@ function App() {
 
         {tipoEntrada === 'peca' && (
 
-          <>
+          <button
+            type="button"
+            className="camera-area camera-clickable"
+            onClick={abrirCamera1}
+            disabled={enviando}
+            aria-label={
+              foto1
+                ? 'Tirar outra foto da peça'
+                : 'Tirar foto da peça'
+            }
+          >
 
-            <button
-              type="button"
-              className="camera-area camera-clickable"
-              onClick={abrirCamera1}
-              disabled={enviando}
-              aria-label={
-                foto1
-                  ? 'Tirar outra foto da peça'
-                  : 'Tirar foto da peça'
-              }
-            >
+            {foto1 ? (
 
-              {foto1 ? (
+              <img
+                src={foto1}
+                alt="Foto da peça"
+                className="plate-photo"
+              />
 
-                <img
-                  src={foto1}
-                  alt="Foto da peça"
-                  className="plate-photo"
-                />
+            ) : (
 
-              ) : (
+              <div className="camera-placeholder">
 
-                <div className="camera-placeholder">
+                <span className="camera-icon">
+                  📷
+                </span>
 
-                  <span className="camera-icon">
-                    📷
-                  </span>
+                <strong>
+                  Toque aqui para tirar a foto
+                </strong>
 
-                  <strong>
-                    Toque aqui para tirar a foto
-                  </strong>
+                <small>
+                  Fotografe a peça
+                </small>
 
-                  <small>
-                    Fotografe a peça
-                  </small>
+              </div>
 
-                </div>
+            )}
 
-              )}
+            {foto1 && (
+              <div className="camera-overlay">
+                📷 Toque para tirar outra foto
+              </div>
+            )}
 
-              {foto1 && (
-                <div className="camera-overlay">
-                  📷 Toque para tirar outra foto
-                </div>
-              )}
-
-            </button>
-
-          </>
+          </button>
         )}
 
         {/* ====================================
@@ -1969,36 +2094,170 @@ function App() {
 
             </div>
 
+            {/* ==================================
+                TIPOS DE PEÇA
+            ================================== */}
+
             <div className="form-group">
 
-              <label htmlFor="descricaoPeca">
-                DESCRIÇÃO DA PEÇA *
+              <label>
+                QUAIS PEÇAS ESTÃO ENTRANDO? *
               </label>
 
-              <textarea
-                id="descricaoPeca"
-                value={descricaoPeca}
-                onChange={(e) =>
-                  setDescricaoPeca(
-                    e.target.value
-                  )
-                }
-                placeholder="Ex.: Bomba e bicos injetores Bosch"
-                rows={3}
-                disabled={enviando}
-              />
-
               <small>
-                Descreva livremente a peça
-                que está entrando na oficina.
+                Você pode selecionar mais de uma.
               </small>
 
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns:
+                    'repeat(2, minmax(0, 1fr))',
+                  gap: '10px',
+                  marginTop: '10px',
+                }}
+              >
+
+                {(
+                  [
+                    {
+                      tipo: 'bomba' as TipoPeca,
+                      icone: '🔧',
+                      nome: 'Bomba',
+                    },
+                    {
+                      tipo: 'bico' as TipoPeca,
+                      icone: '🔩',
+                      nome: 'Bico',
+                    },
+                    {
+                      tipo: 'turbina' as TipoPeca,
+                      icone: '🌀',
+                      nome: 'Turbina',
+                    },
+                    {
+                      tipo: 'outro' as TipoPeca,
+                      icone: '⚙️',
+                      nome: 'Outro',
+                    },
+                  ]
+                ).map(item => {
+
+                  const selecionado =
+                    tiposPeca.includes(
+                      item.tipo
+                    );
+
+                  return (
+                    <button
+                      key={item.tipo}
+                      type="button"
+                      onClick={() =>
+                        alternarTipoPeca(
+                          item.tipo
+                        )
+                      }
+                      disabled={enviando}
+                      style={{
+                        padding:
+                          '14px 10px',
+
+                        border:
+                          selecionado
+                            ? '2px solid #d71920'
+                            : '1px solid #444',
+
+                        borderRadius:
+                          '10px',
+
+                        background:
+                          selecionado
+                            ? 'rgba(215, 25, 32, 0.16)'
+                            : '#181818',
+
+                        color:
+                          '#ffffff',
+
+                        cursor:
+                          enviando
+                            ? 'not-allowed'
+                            : 'pointer',
+
+                        fontWeight:
+                          800,
+
+                        display:
+                          'flex',
+
+                        alignItems:
+                          'center',
+
+                        justifyContent:
+                          'center',
+
+                        gap:
+                          '8px',
+
+                        fontSize:
+                          '15px',
+                      }}
+                    >
+
+                      <span
+                        style={{
+                          fontSize:
+                            '21px',
+                        }}
+                      >
+                        {item.icone}
+                      </span>
+
+                      <span>
+                        {item.nome}
+                      </span>
+
+                      {selecionado && (
+                        <span>
+                          ✓
+                        </span>
+                      )}
+
+                    </button>
+                  );
+                })}
+
+              </div>
+
+              {tiposPeca.length > 0 && (
+                <small
+                  style={{
+                    marginTop:
+                      '10px',
+
+                    color:
+                      '#ffffff',
+
+                    fontWeight:
+                      700,
+                  }}
+                >
+                  Selecionadas:{' '}
+                  {tiposPeca
+                    .map(nomeTipoPeca)
+                    .join(', ')}
+                </small>
+              )}
+
             </div>
+
+            {/* ==================================
+                MODELO DO VEÍCULO
+            ================================== */}
 
             <div className="form-group">
 
               <label htmlFor="modeloPeca">
-                MODELO OU CÓDIGO DA PEÇA *
+                MODELO DO VEÍCULO *
               </label>
 
               <input
@@ -2010,9 +2269,97 @@ function App() {
                     e.target.value
                   )
                 }
-                placeholder="Modelo ou código da peça"
+                placeholder="Ex.: Volvo FH 540"
                 disabled={enviando}
               />
+
+              <small>
+                Informe o veículo onde a peça está aplicada.
+              </small>
+
+            </div>
+
+            {/* ==================================
+                PLACA DA PEÇA
+            ================================== */}
+
+            <div className="form-group">
+
+              <label htmlFor="placaPeca">
+                PLACA DO VEÍCULO
+              </label>
+
+              <input
+                id="placaPeca"
+                type="text"
+                value={placa}
+                onChange={(e) =>
+                  alterarPlaca(
+                    e.target.value
+                  )
+                }
+                placeholder="ABC1D23 — opcional"
+                maxLength={7}
+                disabled={enviando}
+              />
+
+              <small>
+                Se souber a placa do veículo onde a peça está instalada, informe aqui.
+              </small>
+
+            </div>
+
+            {/* ==================================
+                FROTA DA PEÇA
+            ================================== */}
+
+            <div className="form-group">
+
+              <label htmlFor="frotaPeca">
+                FROTA
+              </label>
+
+              <input
+                id="frotaPeca"
+                type="text"
+                value={frota}
+                onChange={(e) =>
+                  setFrota(
+                    e.target.value
+                  )
+                }
+                placeholder="Número da frota — opcional"
+                disabled={enviando}
+              />
+
+            </div>
+
+            {/* ==================================
+                DESCRIÇÃO
+            ================================== */}
+
+            <div className="form-group">
+
+              <label htmlFor="descricaoPeca">
+                DESCRIÇÃO / IDENTIFICAÇÃO DA PEÇA *
+              </label>
+
+              <textarea
+                id="descricaoPeca"
+                value={descricaoPeca}
+                onChange={(e) =>
+                  setDescricaoPeca(
+                    e.target.value
+                  )
+                }
+                placeholder="Ex.: Bomba Bosch CP4 + 6 bicos injetores"
+                rows={3}
+                disabled={enviando}
+              />
+
+              <small>
+                Informe detalhes que ajudem o laboratório a identificar a peça.
+              </small>
 
             </div>
 
@@ -2115,6 +2462,94 @@ function App() {
           </small>
 
         </div>
+
+        {/* ====================================
+            RESUMO DAS PEÇAS
+        ==================================== */}
+
+        {tipoEntrada === 'peca' &&
+          tiposPeca.length > 0 && (
+
+          <div
+            style={{
+              padding:
+                '14px 16px',
+
+              marginBottom:
+                '16px',
+
+              border:
+                '1px solid #444',
+
+              borderLeft:
+                '4px solid #d71920',
+
+              borderRadius:
+                '10px',
+
+              background:
+                '#151515',
+
+              color:
+                '#ffffff',
+            }}
+          >
+
+            <div
+              style={{
+                fontSize:
+                  '12px',
+
+                color:
+                  '#999',
+
+                fontWeight:
+                  800,
+
+                marginBottom:
+                  '6px',
+
+                textTransform:
+                  'uppercase',
+              }}
+            >
+              Peças que serão registradas
+            </div>
+
+            <div
+              style={{
+                fontSize:
+                  '16px',
+
+                fontWeight:
+                  900,
+              }}
+            >
+              {tiposPeca
+                .map(nomeTipoPeca)
+                .join(' + ')}
+            </div>
+
+            {tiposPeca.length === 2 && (
+              <small
+                style={{
+                  display:
+                    'block',
+
+                  marginTop:
+                    '6px',
+
+                  color:
+                    '#aaa',
+                }}
+              >
+                Serão preparados dois romaneios:
+                um para cada peça.
+              </small>
+            )}
+
+          </div>
+        )}
 
         {/* ====================================
             ENVIAR
