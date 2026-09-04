@@ -1,3 +1,8 @@
+/* =========================================================
+   MASTERTEC / DIESEL CENTER
+   VISUAL MODERNO - CLARO / OFICINA
+========================================================= */
+
 * {
   box-sizing: border-box;
 }
@@ -7,13 +12,30 @@ body,
 #root {
   margin: 0;
   min-height: 100%;
+  width: 100%;
+}
+
+html {
+  background: #f3f4f6;
 }
 
 body {
   margin: 0;
-  font-family: Arial, Helvetica, sans-serif;
-  background: #111111;
-  color: #ffffff;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+
+  background: #f3f4f6;
+  color: #202124;
+
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button,
@@ -27,26 +49,52 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* =========================================================
+   APP
+========================================================= */
+
 .app {
   min-height: 100vh;
   padding-bottom: 40px;
+  background:
+    linear-gradient(
+      180deg,
+      #f7f8fa 0%,
+      #eef0f3 100%
+    );
 }
 
-/* ==========================================
+/* =========================================================
    HEADER
-========================================== */
+========================================================= */
 
 .header {
-  padding: 24px 20px;
-  text-align: center;
-  background: #090909;
-  border-bottom: 2px solid #d71920;
+  padding: 18px 20px 20px;
+
+  background: #ffffff;
+
+  border-bottom:
+    1px solid #e3e5e8;
+
+  box-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.05);
+
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+
+.header > div {
+  width: min(100%, 620px);
+  margin: 0 auto;
 }
 
 .logo {
-  font-size: 28px;
-  font-weight: 900;
-  letter-spacing: 1px;
+  font-size: 27px;
+  font-weight: 950;
+  letter-spacing: 0.8px;
+  color: #202124;
+  line-height: 1;
 }
 
 .logo span {
@@ -54,39 +102,221 @@ button {
 }
 
 .subtitle {
-  margin-top: 5px;
-  color: #999999;
-  font-size: 13px;
+  margin-top: 6px;
+  color: #73777d;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
 }
 
-/* ==========================================
-   CARD
-========================================== */
+/* =========================================================
+   TELA DE IDENTIFICAÇÃO
+========================================================= */
+
+.login-page {
+  min-height: 100vh;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 24px 16px;
+
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(215, 25, 32, 0.08),
+      transparent 35%
+    ),
+    linear-gradient(
+      180deg,
+      #f7f8fa 0%,
+      #eceff2 100%
+    );
+}
+
+.login-card {
+  width: 100%;
+
+  padding: 30px 24px;
+
+  background: #ffffff;
+
+  border:
+    1px solid #e1e4e8;
+
+  border-radius: 22px;
+
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.10);
+}
+
+.login-brand {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.login-logo {
+  width: 68px;
+  height: 68px;
+
+  margin: 0 auto 14px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 18px;
+
+  background:
+    linear-gradient(
+      145deg,
+      #d71920,
+      #aa1117
+    );
+
+  color: #ffffff;
+
+  font-size: 25px;
+  font-weight: 950;
+
+  box-shadow:
+    0 10px 24px rgba(215, 25, 32, 0.25);
+}
+
+.login-brand h1 {
+  margin: 0;
+
+  font-size: 27px;
+  font-weight: 950;
+
+  color: #202124;
+
+  letter-spacing: 0.4px;
+}
+
+.login-brand h1 span {
+  color: #d71920;
+}
+
+.login-brand p {
+  margin: 7px 0 0;
+
+  color: #7b8087;
+
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.login-button {
+  width: 100%;
+
+  margin-top: 6px;
+
+  padding: 16px;
+
+  border: none;
+  border-radius: 12px;
+
+  background:
+    linear-gradient(
+      135deg,
+      #d71920,
+      #b9141a
+    );
+
+  color: #ffffff;
+
+  font-size: 15px;
+  font-weight: 900;
+
+  cursor: pointer;
+
+  box-shadow:
+    0 8px 18px rgba(215, 25, 32, 0.20);
+
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    filter 0.15s ease;
+}
+
+.login-button:hover {
+  filter: brightness(1.03);
+}
+
+.login-button:active {
+  transform: scale(0.98);
+}
+
+.login-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.login-error {
+  padding: 12px 14px;
+
+  border:
+    1px solid #f0b7ba;
+
+  border-radius: 10px;
+
+  background: #fff1f2;
+
+  color: #b4232b;
+
+  font-size: 13px;
+  font-weight: 700;
+
+  line-height: 1.4;
+}
+
+/* =========================================================
+   CARD PRINCIPAL
+========================================================= */
 
 .card {
   width: min(100% - 28px, 620px);
-  margin: 24px auto;
-  padding: 22px;
-  background: #1b1b1b;
-  border: 1px solid #333333;
-  border-radius: 16px;
+
+  margin: 22px auto;
+
+  padding: 24px;
+
+  background: #ffffff;
+
+  border:
+    1px solid #e1e4e8;
+
+  border-radius: 20px;
+
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.06);
 }
 
 .card h1 {
   margin: 0;
+
   font-size: 24px;
+  font-weight: 950;
+
+  color: #202124;
 }
 
 .description {
   margin: 8px 0 22px;
-  color: #999999;
+
+  color: #777c83;
+
   font-size: 14px;
+
   line-height: 1.5;
 }
 
-/* ==========================================
+/* =========================================================
    TIPO DE ENTRADA
-========================================== */
+========================================================= */
 
 .entry-type {
   margin-bottom: 20px;
@@ -94,55 +324,75 @@ button {
 
 .entry-type-title {
   display: block;
+
   margin-bottom: 10px;
 
-  color: #ffffff;
+  color: #30343a;
 
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 900;
 }
 
 .entry-type-options {
   display: grid;
+
   grid-template-columns: 1fr 1fr;
+
   gap: 10px;
 }
 
 .entry-type-button {
-  min-height: 105px;
+  min-height: 108px;
+
   padding: 14px 10px;
 
   display: flex;
+
   flex-direction: column;
+
   align-items: center;
+
   justify-content: center;
 
   gap: 5px;
 
-  border: 1px solid #444444;
-  border-radius: 12px;
+  border:
+    1px solid #dfe2e6;
 
-  background: #101010;
-  color: #ffffff;
+  border-radius: 14px;
+
+  background: #f8f9fa;
+
+  color: #2c3035;
 
   cursor: pointer;
 
   transition:
     border-color 0.15s ease,
     background 0.15s ease,
-    transform 0.15s ease;
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .entry-type-button:hover {
-  background: #242424;
+  background: #f2f3f5;
+
+  border-color: #cdd1d6;
 }
 
 .entry-type-button.active {
   border-color: #d71920;
-  background: #281012;
+
+  background:
+    linear-gradient(
+      180deg,
+      #fff4f4,
+      #fffafa
+    );
 
   box-shadow:
-    0 0 0 1px #d71920;
+    0 0 0 1px #d71920,
+    0 8px 20px rgba(215, 25, 32, 0.08);
 }
 
 .entry-type-button:active {
@@ -164,31 +414,41 @@ button {
 }
 
 .entry-type-button small {
-  color: #888888;
+  color: #80858b;
+
   font-size: 11px;
+
   text-align: center;
 }
 
-/* ==========================================
+/* =========================================================
    ÁREA DE FOTO
-========================================== */
+========================================================= */
 
 .camera-area {
   position: relative;
 
   width: 100%;
+
   min-height: 220px;
 
   padding: 0;
 
   overflow: hidden;
 
-  border-radius: 12px;
-  border: 2px dashed #444444;
+  border-radius: 14px;
 
-  background: #101010;
+  border:
+    2px dashed #cfd3d8;
 
-  color: #ffffff;
+  background:
+    linear-gradient(
+      180deg,
+      #fafafa,
+      #f2f4f6
+    );
+
+  color: #30343a;
 
   cursor: pointer;
 
@@ -196,11 +456,12 @@ button {
 
   transition:
     border-color 0.15s ease,
-    transform 0.15s ease;
+    transform 0.15s ease,
+    background 0.15s ease;
 }
 
 .camera-area:hover {
-  border-color: #666666;
+  border-color: #b6bbc1;
 }
 
 .camera-area:active {
@@ -212,57 +473,87 @@ button {
   cursor: not-allowed;
 }
 
-/* ==========================================
+/* =========================================================
    PLACEHOLDER DA CÂMERA
-========================================== */
+========================================================= */
 
 .camera-placeholder {
   min-height: 220px;
 
   display: flex;
+
   flex-direction: column;
+
   align-items: center;
+
   justify-content: center;
 
   gap: 8px;
 
   padding: 20px;
 
-  color: #888888;
+  color: #777d84;
+
   text-align: center;
 }
 
 .camera-placeholder .camera-icon {
-  font-size: 48px;
+  width: 68px;
+  height: 68px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 18px;
+
+  background: #ffffff;
+
+  border:
+    1px solid #e0e3e7;
+
+  font-size: 34px;
+
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.06);
 }
 
 .camera-placeholder strong {
-  color: #dddddd;
-  font-size: 18px;
+  color: #363b41;
+
+  font-size: 17px;
   font-weight: 900;
 }
 
 .camera-placeholder small {
-  color: #777777;
+  max-width: 310px;
+
+  color: #888e95;
+
   font-size: 13px;
+
+  line-height: 1.4;
 }
 
-/* ==========================================
+/* =========================================================
    FOTO CAPTURADA
-========================================== */
+========================================================= */
 
 .plate-photo {
   width: 100%;
+
   height: 280px;
 
   display: block;
 
   object-fit: cover;
+
+  background: #eef0f2;
 }
 
-/* ==========================================
+/* =========================================================
    AVISO SOBRE FOTO CAPTURADA
-========================================== */
+========================================================= */
 
 .camera-overlay {
   position: absolute;
@@ -276,47 +567,56 @@ button {
 
   padding: 10px 12px;
 
-  border-radius: 8px;
+  border-radius: 9px;
 
-  background: rgba(0, 0, 0, 0.72);
+  background: rgba(25, 27, 29, 0.80);
 
   color: #ffffff;
 
   font-size: 13px;
+
   font-weight: 800;
 
   text-align: center;
 
   pointer-events: none;
+
+  backdrop-filter: blur(5px);
 }
 
-/* ==========================================
+/* =========================================================
    CÂMERA AO VIVO
-========================================== */
+========================================================= */
 
 .camera-container {
   position: relative;
 
   width: 100%;
+
   height: min(72vh, 520px);
 
   min-height: 360px;
 
   overflow: hidden;
 
-  border-radius: 14px;
+  border-radius: 16px;
 
-  background: #000000;
+  background: #17191c;
 
-  border: 1px solid #333333;
+  border:
+    1px solid #cfd3d8;
+
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.10);
 }
 
-/* ==========================================
-   VÍDEO DA CÂMERA
-========================================== */
+/* =========================================================
+   VÍDEO
+========================================================= */
 
 .camera-video {
   position: absolute;
+
   inset: 0;
 
   width: 100%;
@@ -329,17 +629,21 @@ button {
   background: #000000;
 }
 
-/* ==========================================
+/* =========================================================
    CAMADA SOBRE A CÂMERA
-========================================== */
+========================================================= */
 
 .camera-overlay-live {
   position: absolute;
+
   inset: 0;
 
   display: flex;
+
   flex-direction: column;
+
   align-items: center;
+
   justify-content: center;
 
   padding: 20px;
@@ -347,26 +651,28 @@ button {
   pointer-events: none;
 }
 
-/* ==========================================
+/* =========================================================
    TEXTO SUPERIOR
-========================================== */
+========================================================= */
 
 .camera-instruction {
   position: absolute;
 
   top: 22px;
+
   left: 16px;
   right: 16px;
 
   padding: 11px 14px;
 
-  border-radius: 8px;
+  border-radius: 10px;
 
-  background: rgba(0, 0, 0, 0.72);
+  background: rgba(18, 20, 22, 0.76);
 
   color: #ffffff;
 
   font-size: 14px;
+
   font-weight: 800;
 
   text-align: center;
@@ -374,16 +680,19 @@ button {
   text-transform: uppercase;
 
   letter-spacing: 0.3px;
+
+  backdrop-filter: blur(5px);
 }
 
-/* ==========================================
+/* =========================================================
    MOLDURA DA PLACA
-========================================== */
+========================================================= */
 
 .plate-frame {
   position: relative;
 
   width: 82%;
+
   max-width: 480px;
 
   aspect-ratio: 2.4 / 1;
@@ -395,12 +704,13 @@ button {
   box-shadow:
     0 0 0 9999px rgba(0, 0, 0, 0.38);
 
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border:
+    1px solid rgba(255, 255, 255, 0.30);
 }
 
-/* ==========================================
+/* =========================================================
    CANTOS DA MOLDURA
-========================================== */
+========================================================= */
 
 .corner {
   position: absolute;
@@ -408,7 +718,7 @@ button {
   width: 32px;
   height: 32px;
 
-  border-color: #d71920;
+  border-color: #e12028;
   border-style: solid;
 }
 
@@ -448,9 +758,9 @@ button {
   border-bottom-right-radius: 8px;
 }
 
-/* ==========================================
+/* =========================================================
    INSTRUÇÃO INFERIOR
-========================================== */
+========================================================= */
 
 .camera-tip {
   position: absolute;
@@ -462,20 +772,22 @@ button {
 
   padding: 9px 12px;
 
-  border-radius: 8px;
+  border-radius: 9px;
 
-  background: rgba(0, 0, 0, 0.68);
+  background: rgba(18, 20, 22, 0.72);
 
   color: #eeeeee;
 
   font-size: 12px;
 
   text-align: center;
+
+  backdrop-filter: blur(5px);
 }
 
-/* ==========================================
+/* =========================================================
    CONTROLES DA CÂMERA
-========================================== */
+========================================================= */
 
 .camera-controls {
   position: absolute;
@@ -487,6 +799,7 @@ button {
   z-index: 5;
 
   display: flex;
+
   align-items: center;
   justify-content: center;
 
@@ -494,27 +807,34 @@ button {
 
   padding: 14px;
 
-  background: linear-gradient(
-    to top,
-    rgba(0, 0, 0, 0.88),
-    rgba(0, 0, 0, 0)
-  );
+  background:
+    linear-gradient(
+      to top,
+      rgba(0, 0, 0, 0.88),
+      rgba(0, 0, 0, 0)
+    );
 }
 
-/* ==========================================
+/* =========================================================
    BOTÃO CAPTURAR
-========================================== */
+========================================================= */
 
 .capture-button {
   min-width: 210px;
 
   padding: 14px 20px;
 
-  border: 2px solid #d71920;
+  border:
+    2px solid #d71920;
 
   border-radius: 999px;
 
-  background: #d71920;
+  background:
+    linear-gradient(
+      135deg,
+      #d71920,
+      #b9141a
+    );
 
   color: #ffffff;
 
@@ -525,61 +845,66 @@ button {
   cursor: pointer;
 
   box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.45);
+    0 4px 16px rgba(0, 0, 0, 0.30);
 
   transition:
     transform 0.15s ease,
-    background 0.15s ease;
+    filter 0.15s ease;
 }
 
 .capture-button:hover {
-  background: #b9141a;
+  filter: brightness(1.04);
 }
 
 .capture-button:active {
   transform: scale(0.96);
 }
 
-/* ==========================================
+/* =========================================================
    CANCELAR CÂMERA
-========================================== */
+========================================================= */
 
 .cancel-camera-button {
   padding: 13px 18px;
 
-  border: 1px solid #666666;
+  border:
+    1px solid rgba(255, 255, 255, 0.35);
 
   border-radius: 999px;
 
-  background: rgba(0, 0, 0, 0.75);
+  background:
+    rgba(0, 0, 0, 0.72);
 
   color: #ffffff;
 
   font-weight: 700;
 
   cursor: pointer;
+
+  backdrop-filter: blur(5px);
 }
 
 .cancel-camera-button:active {
   transform: scale(0.96);
 }
 
-/* ==========================================
+/* =========================================================
    ERRO DA CÂMERA
-========================================== */
+========================================================= */
 
 .camera-error {
   margin-top: 12px;
 
   padding: 12px;
 
-  border: 1px solid #8f171c;
+  border:
+    1px solid #efb0b4;
 
-  border-radius: 9px;
+  border-radius: 10px;
 
-  background: #351012;
+  background: #fff1f2;
 
-  color: #ffb3b6;
+  color: #b4232b;
 
   font-size: 13px;
 
@@ -588,107 +913,110 @@ button {
   text-align: center;
 }
 
-/* ==========================================
+/* =========================================================
    FORMULÁRIO
-========================================== */
+========================================================= */
 
 .form-group {
   margin-top: 22px;
 }
 
-/* ==========================================
-   RÓTULOS DOS CAMPOS
-========================================== */
+/* =========================================================
+   RÓTULOS
+========================================================= */
 
 .form-group label {
   display: block;
 
   margin-bottom: 9px;
 
-  color: #ffffff;
+  color: #30343a;
 
-  /*
-    AUMENTADO BASTANTE
-    sem aumentar o campo de digitação
-  */
-
-  font-size: 19px;
+  font-size: 16px;
 
   font-weight: 900;
 
   line-height: 1.25;
 
-  letter-spacing: 0.2px;
+  letter-spacing: 0.1px;
 }
 
-/* ==========================================
-   CAMPOS DE TEXTO
-========================================== */
+/* =========================================================
+   INPUTS
+========================================================= */
 
 .form-group input {
   width: 100%;
 
   padding: 14px;
 
-  border: 1px solid #444444;
+  border:
+    1px solid #d7dade;
 
-  border-radius: 9px;
+  border-radius: 11px;
 
   outline: none;
 
-  background: #101010;
+  background: #ffffff;
 
-  color: #ffffff;
+  color: #202124;
 
   font-size: 16px;
 
   transition:
     border-color 0.15s ease,
-    box-shadow 0.15s ease;
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.form-group input:hover {
+  border-color: #c3c7cc;
 }
 
 .form-group input:focus {
   border-color: #d71920;
 
   box-shadow:
-    0 0 0 2px rgba(215, 25, 32, 0.12);
+    0 0 0 3px rgba(215, 25, 32, 0.10);
+
+  background: #ffffff;
 }
 
 .form-group input::placeholder {
-  color: #666666;
+  color: #9aa0a6;
 }
 
-/* ==========================================
+/* =========================================================
    TEXTO DE AJUDA
-========================================== */
+========================================================= */
 
 .form-group small {
   display: block;
 
   margin-top: 7px;
 
-  color: #777777;
+  color: #858b92;
 
   font-size: 12px;
 
   line-height: 1.4;
 }
 
-/* ==========================================
+/* =========================================================
    PLACA
-========================================== */
+========================================================= */
 
 #placa {
-  font-weight: 800;
+  font-weight: 900;
 
   letter-spacing: 1.5px;
 
   text-transform: uppercase;
 }
 
-/* ==========================================
+/* =========================================================
    MODELO + ANO
-========================================== */
+========================================================= */
 
 .form-row {
   display: grid;
@@ -698,9 +1026,9 @@ button {
   gap: 12px;
 }
 
-/* ==========================================
+/* =========================================================
    DIVISOR
-========================================== */
+========================================================= */
 
 .divider {
   display: flex;
@@ -713,11 +1041,13 @@ button {
 
   color: #d71920;
 
-  font-size: 14px;
+  font-size: 13px;
 
-  font-weight: 900;
+  font-weight: 950;
 
   text-transform: uppercase;
+
+  letter-spacing: 0.3px;
 }
 
 .divider::before,
@@ -728,27 +1058,28 @@ button {
 
   flex: 1;
 
-  background: #333333;
+  background: #dfe2e6;
 }
 
-/* ==========================================
+/* =========================================================
    SELECT
-========================================== */
+========================================================= */
 
 .form-group select {
   width: 100%;
 
   padding: 14px;
 
-  border: 1px solid #444444;
+  border:
+    1px solid #d7dade;
 
-  border-radius: 9px;
+  border-radius: 11px;
 
   outline: none;
 
-  background: #101010;
+  background: #ffffff;
 
-  color: #ffffff;
+  color: #202124;
 
   cursor: pointer;
 
@@ -757,20 +1088,24 @@ button {
 
 .form-group select:focus {
   border-color: #d71920;
+
+  box-shadow:
+    0 0 0 3px rgba(215, 25, 32, 0.10);
 }
 
-/* ==========================================
+/* =========================================================
    TEXTAREA
-========================================== */
+========================================================= */
 
 .form-group textarea {
   width: 100%;
 
   padding: 14px;
 
-  border: 1px solid #444444;
+  border:
+    1px solid #d7dade;
 
-  border-radius: 9px;
+  border-radius: 11px;
 
   outline: none;
 
@@ -778,31 +1113,39 @@ button {
 
   min-height: 90px;
 
-  background: #101010;
+  background: #ffffff;
 
-  color: #ffffff;
+  color: #202124;
 
   font-family: inherit;
 
   font-size: 16px;
 
   line-height: 1.45;
+
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.form-group textarea:hover {
+  border-color: #c3c7cc;
 }
 
 .form-group textarea:focus {
   border-color: #d71920;
 
   box-shadow:
-    0 0 0 2px rgba(215, 25, 32, 0.12);
+    0 0 0 3px rgba(215, 25, 32, 0.10);
 }
 
 .form-group textarea::placeholder {
-  color: #666666;
+  color: #9aa0a6;
 }
 
-/* ==========================================
+/* =========================================================
    BOTÃO ENVIAR
-========================================== */
+========================================================= */
 
 .submit-button {
   width: 100%;
@@ -813,25 +1156,37 @@ button {
 
   border: none;
 
-  border-radius: 10px;
+  border-radius: 12px;
 
-  background: #d71920;
+  background:
+    linear-gradient(
+      135deg,
+      #d71920,
+      #b9141a
+    );
 
   color: #ffffff;
 
-  font-weight: 900;
+  font-weight: 950;
 
   font-size: 16px;
 
   cursor: pointer;
 
+  box-shadow:
+    0 8px 20px rgba(215, 25, 32, 0.18);
+
   transition:
-    background 0.15s ease,
-    transform 0.15s ease;
+    filter 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .submit-button:hover {
-  background: #b9141a;
+  filter: brightness(1.04);
+
+  box-shadow:
+    0 10px 24px rgba(215, 25, 32, 0.23);
 }
 
 .submit-button:active {
@@ -840,32 +1195,37 @@ button {
 
 .submit-button:disabled {
   opacity: 0.6;
-
   cursor: not-allowed;
+
+  box-shadow: none;
 }
 
-/* ==========================================
+/* =========================================================
    RESPONSIVO - CELULAR
-========================================== */
+========================================================= */
 
 @media (max-width: 480px) {
 
   .header {
-    padding: 20px 16px;
+    padding: 16px 14px 17px;
   }
 
   .logo {
-    font-size: 25px;
+    font-size: 24px;
+  }
+
+  .subtitle {
+    font-size: 11px;
   }
 
   .card {
-    width: calc(100% - 20px);
+    width: calc(100% - 16px);
 
-    margin: 14px auto;
+    margin: 12px auto;
 
     padding: 18px;
 
-    border-radius: 14px;
+    border-radius: 18px;
   }
 
   .card h1 {
@@ -877,15 +1237,42 @@ button {
   }
 
   /* ========================================
-     RÓTULOS NO CELULAR
+     LOGIN
+  ======================================== */
+
+  .login-page {
+    padding: 18px 12px;
+  }
+
+  .login-card {
+    padding: 26px 18px;
+
+    border-radius: 20px;
+  }
+
+  .login-logo {
+    width: 62px;
+    height: 62px;
+
+    border-radius: 17px;
+
+    font-size: 23px;
+  }
+
+  .login-brand h1 {
+    font-size: 24px;
+  }
+
+  /* ========================================
+     RÓTULOS
   ======================================== */
 
   .form-group label {
-    font-size: 19px;
+    font-size: 16px;
 
     font-weight: 900;
 
-    margin-bottom: 9px;
+    margin-bottom: 8px;
   }
 
   /* ========================================
@@ -893,7 +1280,7 @@ button {
   ======================================== */
 
   .entry-type-title {
-    font-size: 18px;
+    font-size: 17px;
   }
 
   .entry-type-options {
@@ -902,6 +1289,10 @@ button {
 
   .entry-type-button {
     min-height: 100px;
+  }
+
+  .entry-icon {
+    font-size: 26px;
   }
 
   /* ========================================
@@ -913,7 +1304,7 @@ button {
 
     min-height: 420px;
 
-    border-radius: 12px;
+    border-radius: 14px;
   }
 
   .camera-instruction {
@@ -978,11 +1369,14 @@ button {
   }
 
   .camera-placeholder .camera-icon {
-    font-size: 46px;
+    width: 60px;
+    height: 60px;
+
+    font-size: 30px;
   }
 
   .camera-placeholder strong {
-    font-size: 17px;
+    font-size: 16px;
   }
 
   .plate-photo {
@@ -1009,23 +1403,25 @@ button {
 
   .submit-button {
     font-size: 16px;
+
+    padding: 16px;
   }
 }
 
-/* ==========================================
+/* =========================================================
    CELULAR MUITO PEQUENO
-========================================== */
+========================================================= */
 
 @media (max-width: 360px) {
 
   .card {
-    width: calc(100% - 12px);
+    width: calc(100% - 10px);
 
     padding: 14px;
   }
 
   .form-group label {
-    font-size: 18px;
+    font-size: 15px;
   }
 
   .camera-container {
@@ -1043,9 +1439,9 @@ button {
   }
 }
 
-/* ==========================================
+/* =========================================================
    LANDSCAPE NO CELULAR
-========================================== */
+========================================================= */
 
 @media (
   max-height: 500px
@@ -1071,5 +1467,24 @@ button {
 
   .camera-controls {
     padding: 8px;
+  }
+}
+
+/* =========================================================
+   ACESSIBILIDADE / REDUÇÃO DE MOVIMENTO
+========================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+
+    transition:
+      none !important;
+
+    animation:
+      none !important;
   }
 }

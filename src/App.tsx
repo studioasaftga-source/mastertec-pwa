@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type ChangeEvent,
 } from 'react';
 
 import './App.css';
@@ -25,6 +26,13 @@ type VeiculoEncontrado = {
   frota: string | null;
   cliente_nome: string | null;
   telefone: string | null;
+};
+
+type FuncionarioLocal = {
+  id: string;
+  nome: string;
+  codigo_acesso: string;
+  empresa_id: string | null;
 };
 
 type DadosSalvos = {
@@ -55,7 +63,26 @@ type DadosSalvos = {
 const STORAGE_KEY =
   'mastertec_entrada_em_andamento';
 
+const FUNCIONARIO_STORAGE_KEY =
+  'mastertec_funcionario';
+
 function App() {
+
+  // ==========================================
+  // FUNCIONÁRIO DO CELULAR
+  // ==========================================
+
+  const [funcionario, setFuncionario] =
+    useState<FuncionarioLocal | null>(null);
+
+  const [codigoFuncionario, setCodigoFuncionario] =
+    useState('');
+
+  const [buscandoFuncionario, setBuscandoFuncionario] =
+    useState(false);
+
+  const [erroFuncionario, setErroFuncionario] =
+    useState('');
 
   // ==========================================
   // INPUTS DAS CÂMERAS
@@ -173,6 +200,225 @@ function App() {
     useRef(false);
 
   // ==========================================
+  // RESTAURAR FUNCIONÁRIO DO CELULAR
+  // ==========================================
+
+  useEffect(() => {
+
+    try {
+
+      const salvo =
+        localStorage.getItem(
+          FUNCIONARIO_STORAGE_KEY
+        );
+
+      if (!salvo) {
+        return;
+      }
+
+      const dados =
+        JSON.parse(
+          salvo
+        ) as FuncionarioLocal;
+
+      if (
+        dados &&
+        dados.id &&
+        dados.nome &&
+        dados.codigo_acesso
+      ) {
+
+        setFuncionario(
+          dados
+        );
+
+        console.log(
+          'FUNCIONÁRIO RESTAURADO:',
+          dados.nome
+        );
+      }
+
+    } catch (error) {
+
+      console.error(
+        'ERRO AO RESTAURAR FUNCIONÁRIO:',
+        error
+      );
+
+      localStorage.removeItem(
+        FUNCIONARIO_STORAGE_KEY
+      );
+    }
+
+  }, []);
+
+  // ==========================================
+  // ENTRAR COMO FUNCIONÁRIO
+  // ==========================================
+
+  async function entrarComoFuncionario() {
+
+    const codigo =
+      codigoFuncionario
+        .trim()
+        .replace(
+          /\D/g,
+          ''
+        )
+        .slice(
+          0,
+          3
+        );
+
+    setErroFuncionario('');
+
+    if (!codigo) {
+
+      setErroFuncionario(
+        'Digite o código do funcionário.'
+      );
+
+      return;
+    }
+
+    setBuscandoFuncionario(
+      true
+    );
+
+    try {
+
+      console.log(
+        'BUSCANDO FUNCIONÁRIO PELA RPC:',
+        codigo
+      );
+
+      const {
+        data,
+        error,
+      } =
+        await supabase.rpc(
+          'buscar_funcionario_por_codigo',
+          {
+            p_codigo: codigo,
+          }
+        );
+
+      if (error) {
+
+        console.error(
+          'ERRO AO BUSCAR FUNCIONÁRIO:',
+          error
+        );
+
+        setErroFuncionario(
+          `Não foi possível identificar o funcionário: ${error.message}`
+        );
+
+        return;
+      }
+
+      const funcionarioEncontrado =
+        Array.isArray(data)
+          ? data[0]
+          : null;
+
+      if (!funcionarioEncontrado) {
+
+        setErroFuncionario(
+          'Código não encontrado ou funcionário inativo.'
+        );
+
+        return;
+      }
+
+      const funcionarioLocal:
+        FuncionarioLocal = {
+
+        id:
+          funcionarioEncontrado.id,
+
+        nome:
+          funcionarioEncontrado.nome,
+
+        codigo_acesso:
+          funcionarioEncontrado.codigo_acesso,
+
+        empresa_id:
+          funcionarioEncontrado.empresa_id ?? null,
+      };
+
+      localStorage.setItem(
+        FUNCIONARIO_STORAGE_KEY,
+        JSON.stringify(
+          funcionarioLocal
+        )
+      );
+
+      setFuncionario(
+        funcionarioLocal
+      );
+
+      setCodigoFuncionario('');
+
+      setErroFuncionario('');
+
+      console.log(
+        'FUNCIONÁRIO IDENTIFICADO:',
+        funcionarioLocal.nome
+      );
+
+    } catch (error) {
+
+      console.error(
+        'ERRO AO IDENTIFICAR FUNCIONÁRIO:',
+        error
+      );
+
+      setErroFuncionario(
+        'Não foi possível identificar o funcionário.'
+      );
+
+    } finally {
+
+      setBuscandoFuncionario(
+        false
+      );
+    }
+  }
+
+  // ==========================================
+  // TROCAR FUNCIONÁRIO
+  // ==========================================
+
+  function trocarFuncionario() {
+
+    if (enviando) {
+      return;
+    }
+
+    const confirmar =
+      window.confirm(
+        'Deseja trocar o funcionário deste celular?'
+      );
+
+    if (!confirmar) {
+      return;
+    }
+
+    localStorage.removeItem(
+      FUNCIONARIO_STORAGE_KEY
+    );
+
+    setFuncionario(
+      null
+    );
+
+    setCodigoFuncionario('');
+
+    setErroFuncionario('');
+  }
+
+  // ==========================================
   // CONVERTER FILE PARA BASE64
   // ==========================================
 
@@ -237,7 +483,9 @@ function App() {
       base64.split(',');
 
     const dados =
-      atob(partes[1]);
+      atob(
+        partes[1]
+      );
 
     const bytes =
       new Uint8Array(
@@ -313,7 +561,6 @@ function App() {
 
         observacao,
 
-        // FOTO 1
         foto1Base64:
           fotosAtuais?.foto1?.base64 ??
           (
@@ -333,7 +580,6 @@ function App() {
           arquivoFoto1?.type ??
           null,
 
-        // FOTO 2
         foto2Base64:
           fotosAtuais?.foto2?.base64 ??
           (
@@ -377,13 +623,15 @@ function App() {
 
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify(dados)
+        JSON.stringify(
+          dados
+        )
       );
 
     } catch (error) {
 
       console.error(
-        'Erro ao salvar formulário localmente:',
+        'ERRO AO SALVAR FORMULÁRIO LOCALMENTE:',
         error
       );
     }
@@ -417,10 +665,6 @@ function App() {
             salvo
           ) as Partial<DadosSalvos>;
 
-        // ======================================
-        // TIPO
-        // ======================================
-
         if (
           dados.tipoEntrada
         ) {
@@ -429,10 +673,6 @@ function App() {
             dados.tipoEntrada
           );
         }
-
-        // ======================================
-        // VEÍCULO
-        // ======================================
 
         setPlaca(
           dados.placa || ''
@@ -446,27 +686,17 @@ function App() {
           dados.frota || ''
         );
 
-        // ======================================
-        // TIPOS DE PEÇA
-        // ======================================
-
         setTiposPeca(
-          Array.isArray(dados.tiposPeca)
+          Array.isArray(
+            dados.tiposPeca
+          )
             ? dados.tiposPeca
             : []
         );
 
-        // ======================================
-        // PEÇA
-        // ======================================
-
         setDescricaoPeca(
           dados.descricaoPeca || ''
         );
-
-        // ======================================
-        // CLIENTE
-        // ======================================
 
         setCliente(
           dados.cliente || ''
@@ -476,17 +706,9 @@ function App() {
           dados.telefone || ''
         );
 
-        // ======================================
-        // OBSERVAÇÃO
-        // ======================================
-
         setObservacao(
           dados.observacao || ''
         );
-
-        // ======================================
-        // FOTO 1
-        // ======================================
 
         if (
           dados.foto1Base64
@@ -514,10 +736,6 @@ function App() {
           }
         }
 
-        // ======================================
-        // FOTO 2
-        // ======================================
-
         if (
           dados.foto2Base64
         ) {
@@ -544,10 +762,6 @@ function App() {
           }
         }
 
-        // ======================================
-        // CONTROLE DE PLACA
-        // ======================================
-
         if (
           dados.placa &&
           dados.placa.length === 7
@@ -558,13 +772,13 @@ function App() {
         }
 
         console.log(
-          'Formulário anterior restaurado.'
+          'FORMULÁRIO ANTERIOR RESTAURADO.'
         );
 
       } catch (error) {
 
         console.error(
-          'Erro ao restaurar formulário:',
+          'ERRO AO RESTAURAR FORMULÁRIO:',
           error
         );
 
@@ -599,7 +813,7 @@ function App() {
       window.setTimeout(
         () => {
 
-          salvarFormulario();
+          void salvarFormulario();
 
         },
         300
@@ -659,7 +873,7 @@ function App() {
   // ==========================================
 
   async function selecionarFoto1(
-    event: React.ChangeEvent<HTMLInputElement>
+    event: ChangeEvent<HTMLInputElement>
   ) {
 
     const arquivo =
@@ -698,7 +912,7 @@ function App() {
     } catch (error) {
 
       console.error(
-        'Erro ao salvar foto 1:',
+        'ERRO AO SALVAR FOTO 1:',
         error
       );
 
@@ -721,7 +935,7 @@ function App() {
   // ==========================================
 
   async function selecionarFoto2(
-    event: React.ChangeEvent<HTMLInputElement>
+    event: ChangeEvent<HTMLInputElement>
   ) {
 
     const arquivo =
@@ -760,7 +974,7 @@ function App() {
     } catch (error) {
 
       console.error(
-        'Erro ao salvar foto 2:',
+        'ERRO AO SALVAR FOTO 2:',
         error
       );
 
@@ -869,7 +1083,7 @@ function App() {
       if (!data) {
 
         console.log(
-          'Placa não encontrada no banco.'
+          'PLACA NÃO ENCONTRADA NO BANCO.'
         );
 
         return;
@@ -988,7 +1202,7 @@ function App() {
     );
 
     console.log(
-      'Cadastro anterior utilizado.'
+      'CADASTRO ANTERIOR UTILIZADO.'
     );
   }
 
@@ -1003,7 +1217,7 @@ function App() {
     );
 
     console.log(
-      'Usuário escolheu cadastrar outro veículo.'
+      'USUÁRIO ESCOLHEU CADASTRAR OUTRO VEÍCULO.'
     );
   }
 
@@ -1209,7 +1423,20 @@ function App() {
   async function enviar() {
 
     // ========================================
-    // VALIDAR FOTO 1
+    // FUNCIONÁRIO
+    // ========================================
+
+    if (!funcionario) {
+
+      alert(
+        'Identifique o funcionário antes de registrar a entrada.'
+      );
+
+      return;
+    }
+
+    // ========================================
+    // FOTO 1
     // ========================================
 
     if (!arquivoFoto1) {
@@ -1224,7 +1451,7 @@ function App() {
     }
 
     // ========================================
-    // VALIDAR FOTO 2 PARA VEÍCULO
+    // FOTO 2 PARA VEÍCULO
     // ========================================
 
     if (
@@ -1313,7 +1540,7 @@ function App() {
     }
 
     // ========================================
-    // VALIDAR CLIENTE
+    // CLIENTE
     // ========================================
 
     if (
@@ -1327,10 +1554,6 @@ function App() {
       return;
     }
 
-    // ========================================
-    // TELEFONE NÃO É OBRIGATÓRIO
-    // ========================================
-
     setEnviando(
       true
     );
@@ -1338,7 +1561,7 @@ function App() {
     try {
 
       // ======================================
-      // 1. ENVIAR FOTO 1
+      // 1. FOTO 1
       // ======================================
 
       const extensao1 =
@@ -1355,7 +1578,7 @@ function App() {
         `entradas/${new Date().getFullYear()}/${nomeArquivo1}`;
 
       console.log(
-        'Enviando foto 1:',
+        'ENVIANDO FOTO 1:',
         caminho1
       );
 
@@ -1439,7 +1662,7 @@ function App() {
           `entradas/${new Date().getFullYear()}/${nomeArquivo2}`;
 
         console.log(
-          'Enviando foto 2:',
+          'ENVIANDO FOTO 2:',
           caminho2
         );
 
@@ -1478,7 +1701,8 @@ function App() {
         }
 
         const {
-          data: fotoPublica2Data,
+          data:
+            fotoPublica2Data,
         } =
           supabase.storage
             .from(
@@ -1498,10 +1722,18 @@ function App() {
       }
 
       // ======================================
-      // 4. MONTAR DADOS
+      // 4. DADOS DA ENTRADA
       // ======================================
 
       const dadosEntrada = {
+
+        /*
+         * FUNCIONÁRIO RESPONSÁVEL
+         *
+         * Este é o usuarios.id
+         */
+        funcionario_id:
+          funcionario.id,
 
         tipo_entrada:
           tipoEntrada,
@@ -1513,12 +1745,6 @@ function App() {
                 .toUpperCase()
             : null,
 
-        // Para veículo:
-        // modelo = modelo do veículo
-        //
-        // Para peça:
-        // modelo = modelo do veículo
-        // onde a peça está aplicada.
         modelo:
           modelo.trim() ||
           null,
@@ -1528,19 +1754,15 @@ function App() {
             ? frota.trim()
             : null,
 
-        // Mantemos tipo_peca para compatibilidade
-        // com registros antigos.
-        //
-        // Quando houver mais de uma peça,
-        // gravamos todas separadas por vírgula.
         tipo_peca:
           tipoEntrada === 'peca'
             ? tiposPeca
-                .map(nomeTipoPeca)
+                .map(
+                  nomeTipoPeca
+                )
                 .join(', ')
             : null,
 
-        // NOVO CAMPO
         tipos_peca:
           tipoEntrada === 'peca'
             ? tiposPeca
@@ -1570,17 +1792,37 @@ function App() {
       };
 
       console.log(
+        '===================================='
+      );
+
+      console.log(
+        'FUNCIONÁRIO:',
+        funcionario.nome
+      );
+
+      console.log(
+        'FUNCIONARIO_ID:',
+        funcionario.id
+      );
+
+      console.log(
         'DADOS DA ENTRADA:',
         dadosEntrada
       );
 
+      console.log(
+        '===================================='
+      );
+
       // ======================================
-      // 5. INSERT NO SUPABASE
+      // 5. INSERT
       // ======================================
 
       const {
-        data: entradaCriada,
-        error: erroEntrada,
+        data:
+          entradaCriada,
+        error:
+          erroEntrada,
       } =
         await supabase
           .from(
@@ -1604,22 +1846,22 @@ function App() {
         );
 
         console.error(
-          'Código:',
+          'CÓDIGO:',
           erroEntrada.code
         );
 
         console.error(
-          'Mensagem:',
+          'MENSAGEM:',
           erroEntrada.message
         );
 
         console.error(
-          'Detalhes:',
+          'DETALHES:',
           erroEntrada.details
         );
 
         console.error(
-          'Hint:',
+          'HINT:',
           erroEntrada.hint
         );
 
@@ -1644,10 +1886,10 @@ function App() {
 
       alert(
         tipoEntrada === 'veiculo'
-          ? 'Entrada do veículo registrada com as duas fotos!'
+          ? `Entrada do veículo registrada!\n\nResponsável: ${funcionario.nome}`
           : tiposPeca.length > 1
-            ? `Entrada registrada com ${tiposPeca.length} peças selecionadas!`
-            : 'Entrada da peça registrada com sucesso!'
+            ? `Entrada registrada com ${tiposPeca.length} peças selecionadas!\n\nResponsável: ${funcionario.nome}`
+            : `Entrada da peça registrada com sucesso!\n\nResponsável: ${funcionario.nome}`
       );
 
       // ======================================
@@ -1684,9 +1926,221 @@ function App() {
     }
   }
 
-  // ==========================================
-  // INTERFACE
-  // ==========================================
+  // =========================================================
+  // TELA DE IDENTIFICAÇÃO
+  // =========================================================
+
+  if (!funcionario) {
+
+    return (
+      <main className="login-page">
+
+        <section
+          className="login-card"
+          style={{
+            maxWidth:
+              '420px',
+          }}
+        >
+
+          <div
+            className="login-brand"
+          >
+
+            <div
+              className="login-logo"
+            >
+              DC
+            </div>
+
+            <h1>
+              DIESEL<span>CENTER</span>
+            </h1>
+
+            <p>
+              Identificação do funcionário
+            </p>
+
+          </div>
+
+          <div
+            style={{
+              marginBottom:
+                '20px',
+
+              padding:
+                '14px 16px',
+
+              border:
+                '1px solid #383838',
+
+              borderLeft:
+                '4px solid #d71920',
+
+              borderRadius:
+                '10px',
+
+              background:
+                '#151515',
+
+              color:
+                '#dddddd',
+
+              fontSize:
+                '14px',
+
+              lineHeight:
+                1.5,
+            }}
+          >
+
+            Digite seu código para que o
+            sistema saiba quem realizou
+            cada entrada.
+
+          </div>
+
+          <div
+            className="form-group"
+          >
+
+            <label
+              htmlFor="codigoFuncionario"
+            >
+              ID DO FUNCIONÁRIO
+            </label>
+
+            <input
+              id="codigoFuncionario"
+              type="text"
+              inputMode="numeric"
+              maxLength={3}
+              value={
+                codigoFuncionario
+              }
+              onChange={(
+                event
+              ) => {
+
+                const valor =
+                  event.target.value
+                    .replace(
+                      /\D/g,
+                      ''
+                    )
+                    .slice(
+                      0,
+                      3
+                    );
+
+                setCodigoFuncionario(
+                  valor
+                );
+
+                setErroFuncionario(
+                  ''
+                );
+              }}
+              onKeyDown={(
+                event
+              ) => {
+
+                if (
+                  event.key ===
+                  'Enter'
+                ) {
+
+                  event.preventDefault();
+
+                  void entrarComoFuncionario();
+                }
+              }}
+              placeholder="Ex.: 005"
+              autoFocus
+            />
+
+            <small>
+              Use o código de 3 números
+              fornecido pela empresa.
+            </small>
+
+          </div>
+
+          {erroFuncionario && (
+
+            <div
+              className="login-error"
+              style={{
+                marginBottom:
+                  '14px',
+              }}
+            >
+              {erroFuncionario}
+            </div>
+
+          )}
+
+          <button
+            type="button"
+            className="login-button"
+            onClick={() =>
+              void entrarComoFuncionario()
+            }
+            disabled={
+              buscandoFuncionario
+            }
+          >
+
+            {
+              buscandoFuncionario
+                ? 'IDENTIFICANDO...'
+                : 'ENTRAR'
+            }
+
+          </button>
+
+          <div
+            style={{
+              marginTop:
+                '20px',
+
+              paddingTop:
+                '15px',
+
+              borderTop:
+                '1px solid #333',
+
+              color:
+                '#777',
+
+              fontSize:
+                '11px',
+
+              lineHeight:
+                1.5,
+
+              textAlign:
+                'center',
+            }}
+          >
+
+            O funcionário ficará identificado
+            neste celular até escolher
+            <strong>
+              {' '}TROCAR
+            </strong>.
+
+          </div>
+
+        </section>
+
+      </main>
+    );
+  }
+
+  // =========================================================
+  // INTERFACE PRINCIPAL
+  // =========================================================
 
   return (
     <main className="app">
@@ -1697,12 +2151,122 @@ function App() {
 
       <header className="header">
 
-        <div className="logo">
-          DIESEL<span>CENTER</span>
-        </div>
+        <div
+          style={{
+            display:
+              'flex',
 
-        <div className="subtitle">
-          Controle de Oficina
+            alignItems:
+              'center',
+
+            justifyContent:
+              'space-between',
+
+            gap:
+              '12px',
+
+            flexWrap:
+              'wrap',
+          }}
+        >
+
+          <div>
+
+            <div className="logo">
+              DIESEL<span>CENTER</span>
+            </div>
+
+            <div className="subtitle">
+              Controle de Oficina
+            </div>
+
+          </div>
+
+          {/* ==================================
+              FUNCIONÁRIO
+          ================================== */}
+
+          <div
+            style={{
+              display:
+                'flex',
+
+              alignItems:
+                'center',
+
+              gap:
+                '8px',
+
+              padding:
+                '8px 10px',
+
+              border:
+                '1px solid #3b3b3b',
+
+              borderRadius:
+                '10px',
+
+              background:
+                '#151515',
+            }}
+          >
+
+            <div
+              style={{
+                color:
+                  '#ffffff',
+
+                fontSize:
+                  '13px',
+
+                fontWeight:
+                  800,
+              }}
+            >
+              👤 {funcionario.nome}
+            </div>
+
+            <button
+              type="button"
+              onClick={
+                trocarFuncionario
+              }
+              disabled={
+                enviando
+              }
+              style={{
+                padding:
+                  '6px 8px',
+
+                border:
+                  '1px solid #555',
+
+                borderRadius:
+                  '7px',
+
+                background:
+                  '#222',
+
+                color:
+                  '#ffffff',
+
+                fontSize:
+                  '10px',
+
+                fontWeight:
+                  800,
+
+                cursor:
+                  enviando
+                    ? 'not-allowed'
+                    : 'pointer',
+              }}
+            >
+              TROCAR
+            </button>
+
+          </div>
+
         </div>
 
       </header>
@@ -1718,8 +2282,18 @@ function App() {
         </h1>
 
         <p className="description">
-          Selecione o que está entrando
-          na oficina.
+
+          Funcionário responsável:{' '}
+
+          <strong
+            style={{
+              color:
+                '#ffffff',
+            }}
+          >
+            {funcionario.nome}
+          </strong>
+
         </p>
 
         {/* ====================================
@@ -1746,7 +2320,9 @@ function App() {
                   'veiculo'
                 )
               }
-              disabled={enviando}
+              disabled={
+                enviando
+              }
             >
 
               <span className="entry-icon">
@@ -1775,7 +2351,9 @@ function App() {
                   'peca'
                 )
               }
-              disabled={enviando}
+              disabled={
+                enviando
+              }
             >
 
               <span className="entry-icon">
@@ -1805,7 +2383,9 @@ function App() {
           type="file"
           accept="image/*"
           capture="environment"
-          onChange={selecionarFoto1}
+          onChange={
+            selecionarFoto1
+          }
           hidden
         />
 
@@ -1818,7 +2398,9 @@ function App() {
           type="file"
           accept="image/*"
           capture="environment"
-          onChange={selecionarFoto2}
+          onChange={
+            selecionarFoto2
+          }
           hidden
         />
 
@@ -1830,8 +2412,11 @@ function App() {
 
           <div
             style={{
-              display: 'grid',
-              gap: '14px',
+              display:
+                'grid',
+
+              gap:
+                '14px',
             }}
           >
 
@@ -1840,8 +2425,12 @@ function App() {
             <button
               type="button"
               className="camera-area camera-clickable"
-              onClick={abrirCamera1}
-              disabled={enviando}
+              onClick={
+                abrirCamera1
+              }
+              disabled={
+                enviando
+              }
               aria-label={
                 foto1
                   ? 'Tirar outra foto da frente'
@@ -1879,9 +2468,11 @@ function App() {
               )}
 
               {foto1 && (
+
                 <div className="camera-overlay">
                   📷 Toque para tirar outra
                 </div>
+
               )}
 
             </button>
@@ -1891,8 +2482,12 @@ function App() {
             <button
               type="button"
               className="camera-area camera-clickable"
-              onClick={abrirCamera2}
-              disabled={enviando}
+              onClick={
+                abrirCamera2
+              }
+              disabled={
+                enviando
+              }
               aria-label={
                 foto2
                   ? 'Tirar outra foto da lateral'
@@ -1930,9 +2525,11 @@ function App() {
               )}
 
               {foto2 && (
+
                 <div className="camera-overlay">
                   📷 Toque para tirar outra
                 </div>
+
               )}
 
             </button>
@@ -1949,8 +2546,12 @@ function App() {
           <button
             type="button"
             className="camera-area camera-clickable"
-            onClick={abrirCamera1}
-            disabled={enviando}
+            onClick={
+              abrirCamera1
+            }
+            disabled={
+              enviando
+            }
             aria-label={
               foto1
                 ? 'Tirar outra foto da peça'
@@ -1987,9 +2588,11 @@ function App() {
             )}
 
             {foto1 && (
+
               <div className="camera-overlay">
                 📷 Toque para tirar outra foto
               </div>
+
             )}
 
           </button>
@@ -2000,6 +2603,7 @@ function App() {
         ==================================== */}
 
         {tipoEntrada === 'veiculo' && (
+
           <>
 
             <div className="form-group">
@@ -2011,7 +2615,9 @@ function App() {
               <input
                 id="placa"
                 type="text"
-                value={placa}
+                value={
+                  placa
+                }
                 onChange={(e) =>
                   alterarPlaca(
                     e.target.value
@@ -2019,7 +2625,9 @@ function App() {
                 }
                 placeholder="ABC1D23"
                 maxLength={7}
-                disabled={enviando}
+                disabled={
+                  enviando
+                }
               />
 
               <small>
@@ -2039,14 +2647,18 @@ function App() {
               <input
                 id="modelo"
                 type="text"
-                value={modelo}
+                value={
+                  modelo
+                }
                 onChange={(e) =>
                   setModelo(
                     e.target.value
                   )
                 }
                 placeholder="Modelo do veículo"
-                disabled={enviando}
+                disabled={
+                  enviando
+                }
               />
 
             </div>
@@ -2060,14 +2672,18 @@ function App() {
               <input
                 id="frota"
                 type="text"
-                value={frota}
+                value={
+                  frota
+                }
                 onChange={(e) =>
                   setFrota(
                     e.target.value
                   )
                 }
                 placeholder="Número da frota, se houver"
-                disabled={enviando}
+                disabled={
+                  enviando
+                }
               />
 
               <small>
@@ -2084,6 +2700,7 @@ function App() {
         ==================================== */}
 
         {tipoEntrada === 'peca' && (
+
           <>
 
             <div className="divider">
@@ -2094,9 +2711,7 @@ function App() {
 
             </div>
 
-            {/* ==================================
-                TIPOS DE PEÇA
-            ================================== */}
+            {/* TIPOS DE PEÇA */}
 
             <div className="form-group">
 
@@ -2110,125 +2725,166 @@ function App() {
 
               <div
                 style={{
-                  display: 'grid',
+                  display:
+                    'grid',
+
                   gridTemplateColumns:
                     'repeat(2, minmax(0, 1fr))',
-                  gap: '10px',
-                  marginTop: '10px',
+
+                  gap:
+                    '10px',
+
+                  marginTop:
+                    '10px',
                 }}
               >
 
                 {(
                   [
                     {
-                      tipo: 'bomba' as TipoPeca,
-                      icone: '🔧',
-                      nome: 'Bomba',
+                      tipo:
+                        'bomba' as TipoPeca,
+
+                      icone:
+                        '🔧',
+
+                      nome:
+                        'Bomba',
                     },
                     {
-                      tipo: 'bico' as TipoPeca,
-                      icone: '🔩',
-                      nome: 'Bico',
+                      tipo:
+                        'bico' as TipoPeca,
+
+                      icone:
+                        '🔩',
+
+                      nome:
+                        'Bico',
                     },
                     {
-                      tipo: 'turbina' as TipoPeca,
-                      icone: '🌀',
-                      nome: 'Turbina',
+                      tipo:
+                        'turbina' as TipoPeca,
+
+                      icone:
+                        '🌀',
+
+                      nome:
+                        'Turbina',
                     },
                     {
-                      tipo: 'outro' as TipoPeca,
-                      icone: '⚙️',
-                      nome: 'Outro',
+                      tipo:
+                        'outro' as TipoPeca,
+
+                      icone:
+                        '⚙️',
+
+                      nome:
+                        'Outro',
                     },
                   ]
-                ).map(item => {
+                ).map(
+                  item => {
 
-                  const selecionado =
-                    tiposPeca.includes(
-                      item.tipo
-                    );
+                    const selecionado =
+                      tiposPeca.includes(
+                        item.tipo
+                      );
 
-                  return (
-                    <button
-                      key={item.tipo}
-                      type="button"
-                      onClick={() =>
-                        alternarTipoPeca(
+                    return (
+
+                      <button
+                        key={
                           item.tipo
-                        )
-                      }
-                      disabled={enviando}
-                      style={{
-                        padding:
-                          '14px 10px',
-
-                        border:
-                          selecionado
-                            ? '2px solid #d71920'
-                            : '1px solid #444',
-
-                        borderRadius:
-                          '10px',
-
-                        background:
-                          selecionado
-                            ? 'rgba(215, 25, 32, 0.16)'
-                            : '#181818',
-
-                        color:
-                          '#ffffff',
-
-                        cursor:
+                        }
+                        type="button"
+                        onClick={() =>
+                          alternarTipoPeca(
+                            item.tipo
+                          )
+                        }
+                        disabled={
                           enviando
-                            ? 'not-allowed'
-                            : 'pointer',
-
-                        fontWeight:
-                          800,
-
-                        display:
-                          'flex',
-
-                        alignItems:
-                          'center',
-
-                        justifyContent:
-                          'center',
-
-                        gap:
-                          '8px',
-
-                        fontSize:
-                          '15px',
-                      }}
-                    >
-
-                      <span
+                        }
                         style={{
+                          padding:
+                            '14px 10px',
+
+                          border:
+                            selecionado
+                              ? '2px solid #d71920'
+                              : '1px solid #444',
+
+                          borderRadius:
+                            '10px',
+
+                          background:
+                            selecionado
+                              ? 'rgba(215, 25, 32, 0.16)'
+                              : '#181818',
+
+                          color:
+                            '#ffffff',
+
+                          cursor:
+                            enviando
+                              ? 'not-allowed'
+                              : 'pointer',
+
+                          fontWeight:
+                            800,
+
+                          display:
+                            'flex',
+
+                          alignItems:
+                            'center',
+
+                          justifyContent:
+                            'center',
+
+                          gap:
+                            '8px',
+
                           fontSize:
-                            '21px',
+                            '15px',
                         }}
                       >
-                        {item.icone}
-                      </span>
 
-                      <span>
-                        {item.nome}
-                      </span>
-
-                      {selecionado && (
-                        <span>
-                          ✓
+                        <span
+                          style={{
+                            fontSize:
+                              '21px',
+                          }}
+                        >
+                          {
+                            item.icone
+                          }
                         </span>
-                      )}
 
-                    </button>
-                  );
-                })}
+                        <span>
+                          {
+                            item.nome
+                          }
+                        </span>
+
+                        {selecionado && (
+
+                          <span>
+                            ✓
+                          </span>
+
+                        )}
+
+                      </button>
+
+                    );
+                  }
+                )}
 
               </div>
 
               {tiposPeca.length > 0 && (
+
                 <small
                   style={{
                     marginTop:
@@ -2242,17 +2898,22 @@ function App() {
                   }}
                 >
                   Selecionadas:{' '}
-                  {tiposPeca
-                    .map(nomeTipoPeca)
-                    .join(', ')}
+                  {
+                    tiposPeca
+                      .map(
+                        nomeTipoPeca
+                      )
+                      .join(
+                        ', '
+                      )
+                  }
                 </small>
+
               )}
 
             </div>
 
-            {/* ==================================
-                MODELO DO VEÍCULO
-            ================================== */}
+            {/* MODELO */}
 
             <div className="form-group">
 
@@ -2263,14 +2924,18 @@ function App() {
               <input
                 id="modeloPeca"
                 type="text"
-                value={modelo}
+                value={
+                  modelo
+                }
                 onChange={(e) =>
                   setModelo(
                     e.target.value
                   )
                 }
                 placeholder="Ex.: Volvo FH 540"
-                disabled={enviando}
+                disabled={
+                  enviando
+                }
               />
 
               <small>
@@ -2279,9 +2944,7 @@ function App() {
 
             </div>
 
-            {/* ==================================
-                PLACA DA PEÇA
-            ================================== */}
+            {/* PLACA */}
 
             <div className="form-group">
 
@@ -2292,7 +2955,9 @@ function App() {
               <input
                 id="placaPeca"
                 type="text"
-                value={placa}
+                value={
+                  placa
+                }
                 onChange={(e) =>
                   alterarPlaca(
                     e.target.value
@@ -2300,7 +2965,9 @@ function App() {
                 }
                 placeholder="ABC1D23 — opcional"
                 maxLength={7}
-                disabled={enviando}
+                disabled={
+                  enviando
+                }
               />
 
               <small>
@@ -2309,9 +2976,7 @@ function App() {
 
             </div>
 
-            {/* ==================================
-                FROTA DA PEÇA
-            ================================== */}
+            {/* FROTA */}
 
             <div className="form-group">
 
@@ -2322,21 +2987,23 @@ function App() {
               <input
                 id="frotaPeca"
                 type="text"
-                value={frota}
+                value={
+                  frota
+                }
                 onChange={(e) =>
                   setFrota(
                     e.target.value
                   )
                 }
                 placeholder="Número da frota — opcional"
-                disabled={enviando}
+                disabled={
+                  enviando
+                }
               />
 
             </div>
 
-            {/* ==================================
-                DESCRIÇÃO
-            ================================== */}
+            {/* DESCRIÇÃO */}
 
             <div className="form-group">
 
@@ -2346,7 +3013,9 @@ function App() {
 
               <textarea
                 id="descricaoPeca"
-                value={descricaoPeca}
+                value={
+                  descricaoPeca
+                }
                 onChange={(e) =>
                   setDescricaoPeca(
                     e.target.value
@@ -2354,7 +3023,9 @@ function App() {
                 }
                 placeholder="Ex.: Bomba Bosch CP4 + 6 bicos injetores"
                 rows={3}
-                disabled={enviando}
+                disabled={
+                  enviando
+                }
               />
 
               <small>
@@ -2387,14 +3058,18 @@ function App() {
           <input
             id="cliente"
             type="text"
-            value={cliente}
+            value={
+              cliente
+            }
             onChange={(e) =>
               setCliente(
                 e.target.value
               )
             }
             placeholder="Nome completo"
-            disabled={enviando}
+            disabled={
+              enviando
+            }
           />
 
         </div>
@@ -2412,14 +3087,18 @@ function App() {
           <input
             id="telefone"
             type="tel"
-            value={telefone}
+            value={
+              telefone
+            }
             onChange={(e) =>
               setTelefone(
                 e.target.value
               )
             }
             placeholder="(00) 00000-0000"
-            disabled={enviando}
+            disabled={
+              enviando
+            }
           />
 
           <small>
@@ -2440,7 +3119,9 @@ function App() {
 
           <textarea
             id="observacao"
-            value={observacao}
+            value={
+              observacao
+            }
             onChange={(e) =>
               setObservacao(
                 e.target.value
@@ -2452,7 +3133,9 @@ function App() {
                 : 'Ex.: Peça chegou com riscos, amassados ou outros detalhes...'
             }
             rows={4}
-            disabled={enviando}
+            disabled={
+              enviando
+            }
           />
 
           <small>
@@ -2525,30 +3208,40 @@ function App() {
                   900,
               }}
             >
-              {tiposPeca
-                .map(nomeTipoPeca)
-                .join(' + ')}
+
+              {
+                tiposPeca
+                  .map(
+                    nomeTipoPeca
+                  )
+                  .join(
+                    ' + '
+                  )
+              }
+
             </div>
 
-            {tiposPeca.length === 2 && (
-              <small
-                style={{
-                  display:
-                    'block',
+            <small
+              style={{
+                display:
+                  'block',
 
-                  marginTop:
-                    '6px',
+                marginTop:
+                  '6px',
 
-                  color:
-                    '#aaa',
-                }}
-              >
-                Serão preparados dois romaneios:
-                um para cada peça.
-              </small>
-            )}
+                color:
+                  '#aaa',
+              }}
+            >
+
+              {tiposPeca.length === 1
+                ? 'Será preparado um romaneio para esta peça.'
+                : `Serão preparados ${tiposPeca.length} romaneios, um para cada peça.`}
+
+            </small>
 
           </div>
+
         )}
 
         {/* ====================================
@@ -2558,13 +3251,19 @@ function App() {
         <button
           type="button"
           className="submit-button"
-          onClick={enviar}
-          disabled={enviando}
+          onClick={() =>
+            void enviar()
+          }
+          disabled={
+            enviando
+          }
         >
 
-          {enviando
-            ? 'ENVIANDO...'
-            : 'ENVIAR ENTRADA'}
+          {
+            enviando
+              ? 'ENVIANDO...'
+              : 'ENVIAR ENTRADA'
+          }
 
         </button>
 
@@ -2579,15 +3278,26 @@ function App() {
 
           <div
             style={{
-              position: 'fixed',
-              inset: 0,
-              zIndex: 9999,
+              position:
+                'fixed',
 
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              inset:
+                0,
 
-              padding: '20px',
+              zIndex:
+                9999,
+
+              display:
+                'flex',
+
+              alignItems:
+                'center',
+
+              justifyContent:
+                'center',
+
+              padding:
+                '20px',
 
               background:
                 'rgba(0, 0, 0, 0.78)',
@@ -2596,10 +3306,14 @@ function App() {
 
             <div
               style={{
-                width: '100%',
-                maxWidth: '440px',
+                width:
+                  '100%',
 
-                padding: '24px',
+                maxWidth:
+                  '440px',
+
+                padding:
+                  '24px',
 
                 border:
                   '1px solid #444444',
@@ -2607,9 +3321,11 @@ function App() {
                 borderTop:
                   '4px solid #d71920',
 
-                borderRadius: '16px',
+                borderRadius:
+                  '16px',
 
-                background: '#1b1b1b',
+                background:
+                  '#1b1b1b',
 
                 boxShadow:
                   '0 20px 60px rgba(0,0,0,0.6)',
@@ -2618,15 +3334,21 @@ function App() {
 
               <div
                 style={{
-                  textAlign: 'center',
-                  marginBottom: '20px',
+                  textAlign:
+                    'center',
+
+                  marginBottom:
+                    '20px',
                 }}
               >
 
                 <div
                   style={{
-                    fontSize: '42px',
-                    marginBottom: '8px',
+                    fontSize:
+                      '42px',
+
+                    marginBottom:
+                      '8px',
                   }}
                 >
                   🚗
@@ -2634,10 +3356,17 @@ function App() {
 
                 <h2
                   style={{
-                    margin: 0,
-                    color: '#ffffff',
-                    fontSize: '22px',
-                    fontWeight: 900,
+                    margin:
+                      0,
+
+                    color:
+                      '#ffffff',
+
+                    fontSize:
+                      '22px',
+
+                    fontWeight:
+                      900,
                   }}
                 >
                   VEÍCULO ENCONTRADO
@@ -2647,9 +3376,15 @@ function App() {
                   style={{
                     margin:
                       '8px 0 0',
-                    color: '#999999',
-                    fontSize: '14px',
-                    lineHeight: 1.4,
+
+                    color:
+                      '#999999',
+
+                    fontSize:
+                      '14px',
+
+                    lineHeight:
+                      1.4,
                   }}
                 >
                   Já existe um cadastro
@@ -2660,26 +3395,41 @@ function App() {
 
               <div
                 style={{
-                  padding: '16px',
+                  padding:
+                    '16px',
+
                   border:
                     '1px solid #383838',
-                  borderRadius: '12px',
-                  background: '#101010',
+
+                  borderRadius:
+                    '12px',
+
+                  background:
+                    '#101010',
                 }}
               >
 
                 <div
                   style={{
-                    marginBottom: '14px',
+                    marginBottom:
+                      '14px',
                   }}
                 >
 
                   <div
                     style={{
-                      color: '#888888',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      marginBottom: '4px',
+                      color:
+                        '#888888',
+
+                      fontSize:
+                        '12px',
+
+                      fontWeight:
+                        700,
+
+                      marginBottom:
+                        '4px',
+
                       textTransform:
                         'uppercase',
                     }}
@@ -2689,31 +3439,48 @@ function App() {
 
                   <div
                     style={{
-                      color: '#ffffff',
-                      fontSize: '23px',
-                      fontWeight: 900,
+                      color:
+                        '#ffffff',
+
+                      fontSize:
+                        '23px',
+
+                      fontWeight:
+                        900,
+
                       letterSpacing:
                         '1.5px',
                     }}
                   >
-                    {veiculoEncontrado.placa ||
-                      '-'}
+                    {
+                      veiculoEncontrado.placa ||
+                      '-'
+                    }
                   </div>
 
                 </div>
 
                 <div
                   style={{
-                    marginBottom: '14px',
+                    marginBottom:
+                      '14px',
                   }}
                 >
 
                   <div
                     style={{
-                      color: '#888888',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      marginBottom: '4px',
+                      color:
+                        '#888888',
+
+                      fontSize:
+                        '12px',
+
+                      fontWeight:
+                        700,
+
+                      marginBottom:
+                        '4px',
+
                       textTransform:
                         'uppercase',
                     }}
@@ -2723,29 +3490,45 @@ function App() {
 
                   <div
                     style={{
-                      color: '#ffffff',
-                      fontSize: '17px',
-                      fontWeight: 800,
+                      color:
+                        '#ffffff',
+
+                      fontSize:
+                        '17px',
+
+                      fontWeight:
+                        800,
                     }}
                   >
-                    {veiculoEncontrado.modelo ||
-                      '-'}
+                    {
+                      veiculoEncontrado.modelo ||
+                      '-'
+                    }
                   </div>
 
                 </div>
 
                 <div
                   style={{
-                    marginBottom: '14px',
+                    marginBottom:
+                      '14px',
                   }}
                 >
 
                   <div
                     style={{
-                      color: '#888888',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      marginBottom: '4px',
+                      color:
+                        '#888888',
+
+                      fontSize:
+                        '12px',
+
+                      fontWeight:
+                        700,
+
+                      marginBottom:
+                        '4px',
+
                       textTransform:
                         'uppercase',
                     }}
@@ -2755,29 +3538,45 @@ function App() {
 
                   <div
                     style={{
-                      color: '#ffffff',
-                      fontSize: '16px',
-                      fontWeight: 700,
+                      color:
+                        '#ffffff',
+
+                      fontSize:
+                        '16px',
+
+                      fontWeight:
+                        700,
                     }}
                   >
-                    {veiculoEncontrado.frota ||
-                      'Não informada'}
+                    {
+                      veiculoEncontrado.frota ||
+                      'Não informada'
+                    }
                   </div>
 
                 </div>
 
                 <div
                   style={{
-                    marginBottom: '14px',
+                    marginBottom:
+                      '14px',
                   }}
                 >
 
                   <div
                     style={{
-                      color: '#888888',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      marginBottom: '4px',
+                      color:
+                        '#888888',
+
+                      fontSize:
+                        '12px',
+
+                      fontWeight:
+                        700,
+
+                      marginBottom:
+                        '4px',
+
                       textTransform:
                         'uppercase',
                     }}
@@ -2787,13 +3586,20 @@ function App() {
 
                   <div
                     style={{
-                      color: '#ffffff',
-                      fontSize: '17px',
-                      fontWeight: 800,
+                      color:
+                        '#ffffff',
+
+                      fontSize:
+                        '17px',
+
+                      fontWeight:
+                        800,
                     }}
                   >
-                    {veiculoEncontrado.cliente_nome ||
-                      '-'}
+                    {
+                      veiculoEncontrado.cliente_nome ||
+                      '-'
+                    }
                   </div>
 
                 </div>
@@ -2802,10 +3608,18 @@ function App() {
 
                   <div
                     style={{
-                      color: '#888888',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      marginBottom: '4px',
+                      color:
+                        '#888888',
+
+                      fontSize:
+                        '12px',
+
+                      fontWeight:
+                        700,
+
+                      marginBottom:
+                        '4px',
+
                       textTransform:
                         'uppercase',
                     }}
@@ -2815,13 +3629,20 @@ function App() {
 
                   <div
                     style={{
-                      color: '#ffffff',
-                      fontSize: '16px',
-                      fontWeight: 700,
+                      color:
+                        '#ffffff',
+
+                      fontSize:
+                        '16px',
+
+                      fontWeight:
+                        700,
                     }}
                   >
-                    {veiculoEncontrado.telefone ||
-                      'Não informado'}
+                    {
+                      veiculoEncontrado.telefone ||
+                      'Não informado'
+                    }
                   </div>
 
                 </div>
@@ -2832,10 +3653,18 @@ function App() {
                 style={{
                   margin:
                     '18px 0',
-                  color: '#aaaaaa',
-                  fontSize: '13px',
-                  lineHeight: 1.5,
-                  textAlign: 'center',
+
+                  color:
+                    '#aaaaaa',
+
+                  fontSize:
+                    '13px',
+
+                  lineHeight:
+                    1.5,
+
+                  textAlign:
+                    'center',
                 }}
               >
                 Se for o mesmo veículo,
@@ -2849,16 +3678,35 @@ function App() {
                   usarCadastroEncontrado
                 }
                 style={{
-                  width: '100%',
-                  padding: '15px',
-                  border: 'none',
-                  borderRadius: '10px',
-                  background: '#d71920',
-                  color: '#ffffff',
-                  fontSize: '15px',
-                  fontWeight: 900,
-                  cursor: 'pointer',
-                  marginBottom: '10px',
+                  width:
+                    '100%',
+
+                  padding:
+                    '15px',
+
+                  border:
+                    'none',
+
+                  borderRadius:
+                    '10px',
+
+                  background:
+                    '#d71920',
+
+                  color:
+                    '#ffffff',
+
+                  fontSize:
+                    '15px',
+
+                  fontWeight:
+                    900,
+
+                  cursor:
+                    'pointer',
+
+                  marginBottom:
+                    '10px',
                 }}
               >
                 ✓ USAR ESTE CADASTRO
@@ -2870,16 +3718,32 @@ function App() {
                   cadastrarOutroVeiculo
                 }
                 style={{
-                  width: '100%',
-                  padding: '14px',
+                  width:
+                    '100%',
+
+                  padding:
+                    '14px',
+
                   border:
                     '1px solid #555555',
-                  borderRadius: '10px',
-                  background: '#292929',
-                  color: '#ffffff',
-                  fontSize: '14px',
-                  fontWeight: 800,
-                  cursor: 'pointer',
+
+                  borderRadius:
+                    '10px',
+
+                  background:
+                    '#292929',
+
+                  color:
+                    '#ffffff',
+
+                  fontSize:
+                    '14px',
+
+                  fontWeight:
+                    800,
+
+                  cursor:
+                    'pointer',
                 }}
               >
                 NÃO, CADASTRAR OUTRO
