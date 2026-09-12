@@ -1,225 +1,364 @@
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
   type ChangeEvent,
-} from 'react';
+} from 'react'
 
-import './App.css';
+import './App.css'
 
-import { supabase } from './lib/supabase';
+import { supabase } from './lib/supabase'
 
-type TipoEntrada =
-  | 'veiculo'
-  | 'peca';
+type TipoEntrada = 'veiculo' | 'peca'
 
 type TipoPeca =
   | 'bomba'
   | 'bico'
   | 'turbina'
-  | 'outro';
+  | 'outro'
+
+type TelaPrincipal =
+  | 'entrada'
+  | 'ordens'
 
 type VeiculoEncontrado = {
-  id: string;
-  placa: string | null;
-  modelo: string | null;
-  frota: string | null;
-  cliente_nome: string | null;
-  telefone: string | null;
-};
+  id: string
+  placa: string | null
+  modelo: string | null
+  frota: string | null
+  cliente_nome: string | null
+  telefone: string | null
+}
 
 type FuncionarioLocal = {
-  id: string;
-  nome: string;
-  codigo_acesso: string;
-  empresa_id: string | null;
-};
+  id: string
+  nome: string
+  codigo_acesso: string
+  empresa_id: string | null
+}
 
 type DadosSalvos = {
-  tipoEntrada: TipoEntrada;
+  tipoEntrada: TipoEntrada
 
-  placa: string;
-  modelo: string;
-  frota: string;
+  placa: string
+  modelo: string
+  frota: string
 
-  tiposPeca: TipoPeca[];
+  tiposPeca: TipoPeca[]
 
-  descricaoPeca: string;
+  descricaoPeca: string
 
-  cliente: string;
-  telefone: string;
+  cliente: string
+  telefone: string
 
-  observacao: string;
+  observacao: string
 
-  foto1Base64: string | null;
-  foto1Nome: string | null;
-  foto1Tipo: string | null;
+  foto1Base64: string | null
+  foto1Nome: string | null
+  foto1Tipo: string | null
 
-  foto2Base64: string | null;
-  foto2Nome: string | null;
-  foto2Tipo: string | null;
-};
+  foto2Base64: string | null
+  foto2Nome: string | null
+  foto2Tipo: string | null
+}
+
+type OrdemServicoPWA = {
+  id: string
+  empresa_id: string
+  entrada_id: string | null
+  responsavel_id: string | null
+  numero: number | null
+  titulo: string
+  descricao: string | null
+  status: string
+  prioridade: string
+  data_entrada: string
+  data_inicio: string | null
+  data_conclusao: string | null
+  observacoes: string | null
+  percentual_comissao: number | null
+  valor_servicos: number | null
+  valor_pecas: number | null
+  valor_total: number | null
+  valor_comissao: number | null
+  updated_at: string
+}
+
+type EntradaOS = {
+  id: string
+  empresa_id: string
+  placa: string | null
+  ano: number | null
+  modelo: string | null
+  cliente_nome: string | null
+  telefone: string | null
+  observacao: string | null
+  frota: string | null
+  criado_em: string | null
+  tipo_entrada: string | null
+  tipo_peca: string | null
+  descricao_peca: string | null
+  foto_url: string | null
+  foto_url_2: string | null
+}
+
+type LinhaServico = {
+  id?: string
+  descricao: string
+  quantidade: string
+  valor: string
+}
+
+type TarefaExistente = {
+  id: string
+  ordem_servico_id: string
+  responsavel_id: string | null
+  titulo: string | null
+  descricao: string | null
+  quantidade: number | null
+  valor_unitario: number | null
+  valor_total: number | null
+  ordem: number | null
+}
 
 const STORAGE_KEY =
-  'mastertec_entrada_em_andamento';
+  'mastertec_entrada_em_andamento'
 
 const FUNCIONARIO_STORAGE_KEY =
-  'mastertec_funcionario';
+  'mastertec_funcionario'
+
+function criarLinhaServico(): LinhaServico {
+  return {
+    descricao: '',
+    quantidade: '1',
+    valor: '',
+  }
+}
+
+function converterNumero(valor: string) {
+  if (!valor) {
+    return 0
+  }
+
+  let texto = valor
+    .trim()
+    .replace(/\s/g, '')
+    .replace(/R\$/gi, '')
+
+  if (texto.includes(',')) {
+    texto = texto.replace(/\./g, '')
+    texto = texto.replace(',', '.')
+  }
+
+  const numero = Number(texto)
+
+  return Number.isFinite(numero)
+    ? numero
+    : 0
+}
+
+function formatarMoedaNumero(valor: number) {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+  }).format(valor)
+}
+
+function statusOSFechada(
+  status: string | null | undefined,
+) {
+  return (
+    status === 'servico_finalizado' ||
+    status === 'concluida' ||
+    status === 'encerrada'
+  )
+}
 
 function App() {
+  const [
+    funcionario,
+    setFuncionario,
+  ] = useState<FuncionarioLocal | null>(null)
 
-  // ==========================================
-  // FUNCIONÁRIO DO CELULAR
-  // ==========================================
+  const [
+    codigoFuncionario,
+    setCodigoFuncionario,
+  ] = useState('')
 
-  const [funcionario, setFuncionario] =
-    useState<FuncionarioLocal | null>(null);
+  const [
+    buscandoFuncionario,
+    setBuscandoFuncionario,
+  ] = useState(false)
 
-  const [codigoFuncionario, setCodigoFuncionario] =
-    useState('');
+  const [
+    erroFuncionario,
+    setErroFuncionario,
+  ] = useState('')
 
-  const [buscandoFuncionario, setBuscandoFuncionario] =
-    useState(false);
+  const [
+    telaPrincipal,
+    setTelaPrincipal,
+  ] = useState<TelaPrincipal>('entrada')
 
-  const [erroFuncionario, setErroFuncionario] =
-    useState('');
+  const [
+    minhasOrdens,
+    setMinhasOrdens,
+  ] = useState<OrdemServicoPWA[]>([])
 
-  // ==========================================
-  // INPUTS DAS CÂMERAS
-  // ==========================================
+  const [
+    carregandoOrdens,
+    setCarregandoOrdens,
+  ] = useState(false)
+
+  const [
+    erroOrdens,
+    setErroOrdens,
+  ] = useState('')
+
+  const [
+    ordemAberta,
+    setOrdemAberta,
+  ] = useState<OrdemServicoPWA | null>(null)
+
+  const [
+    entradaDaOrdem,
+    setEntradaDaOrdem,
+  ] = useState<EntradaOS | null>(null)
+
+  const [
+    carregandoDetalhesOS,
+    setCarregandoDetalhesOS,
+  ] = useState(false)
+
+  const [
+    linhasServico,
+    setLinhasServico,
+  ] = useState<LinhaServico[]>([
+    criarLinhaServico(),
+    criarLinhaServico(),
+    criarLinhaServico(),
+    criarLinhaServico(),
+    criarLinhaServico(),
+  ])
+
+  const [
+    finalizandoOS,
+    setFinalizandoOS,
+  ] = useState(false)
+
+  const [
+    tarefasOriginais,
+    setTarefasOriginais,
+  ] = useState<TarefaExistente[]>([])
 
   const cameraInput1Ref =
-    useRef<HTMLInputElement>(null);
+    useRef<HTMLInputElement>(null)
 
   const cameraInput2Ref =
-    useRef<HTMLInputElement>(null);
+    useRef<HTMLInputElement>(null)
 
-  // ==========================================
-  // TIPO DE ENTRADA
-  // ==========================================
+  const [
+    tipoEntrada,
+    setTipoEntrada,
+  ] = useState<TipoEntrada>('veiculo')
 
-  const [tipoEntrada, setTipoEntrada] =
-    useState<TipoEntrada>('veiculo');
+  const [
+    foto1,
+    setFoto1,
+  ] = useState<string | null>(null)
 
-  // ==========================================
-  // FOTO 1
-  // ==========================================
+  const [
+    arquivoFoto1,
+    setArquivoFoto1,
+  ] = useState<File | null>(null)
 
-  const [foto1, setFoto1] =
-    useState<string | null>(null);
+  const [
+    foto2,
+    setFoto2,
+  ] = useState<string | null>(null)
 
-  const [arquivoFoto1, setArquivoFoto1] =
-    useState<File | null>(null);
+  const [
+    arquivoFoto2,
+    setArquivoFoto2,
+  ] = useState<File | null>(null)
 
-  // ==========================================
-  // FOTO 2
-  // ==========================================
+  const [
+    placa,
+    setPlaca,
+  ] = useState('')
 
-  const [foto2, setFoto2] =
-    useState<string | null>(null);
+  const [
+    modelo,
+    setModelo,
+  ] = useState('')
 
-  const [arquivoFoto2, setArquivoFoto2] =
-    useState<File | null>(null);
+  const [
+    frota,
+    setFrota,
+  ] = useState('')
 
-  // ==========================================
-  // VEÍCULO / VEÍCULO DA PEÇA
-  // ==========================================
+  const [
+    tiposPeca,
+    setTiposPeca,
+  ] = useState<TipoPeca[]>([])
 
-  const [placa, setPlaca] =
-    useState('');
+  const [
+    descricaoPeca,
+    setDescricaoPeca,
+  ] = useState('')
 
-  const [modelo, setModelo] =
-    useState('');
+  const [
+    cliente,
+    setCliente,
+  ] = useState('')
 
-  const [frota, setFrota] =
-    useState('');
+  const [
+    telefone,
+    setTelefone,
+  ] = useState('')
 
-  // ==========================================
-  // TIPOS DE PEÇA
-  // ==========================================
+  const [
+    observacao,
+    setObservacao,
+  ] = useState('')
 
-  const [tiposPeca, setTiposPeca] =
-    useState<TipoPeca[]>([]);
+  const [
+    enviando,
+    setEnviando,
+  ] = useState(false)
 
-  // ==========================================
-  // DESCRIÇÃO DA PEÇA
-  // ==========================================
+  const [
+    consultandoPlaca,
+    setConsultandoPlaca,
+  ] = useState(false)
 
-  const [descricaoPeca, setDescricaoPeca] =
-    useState('');
+  const [
+    veiculoEncontrado,
+    setVeiculoEncontrado,
+  ] = useState<VeiculoEncontrado | null>(null)
 
-  // ==========================================
-  // CLIENTE
-  // ==========================================
+  const [
+    mostrarVeiculoEncontrado,
+    setMostrarVeiculoEncontrado,
+  ] = useState(false)
 
-  const [cliente, setCliente] =
-    useState('');
+  const ultimaPlacaConsultada = useRef('')
 
-  const [telefone, setTelefone] =
-    useState('');
-
-  // ==========================================
-  // OBSERVAÇÃO
-  // ==========================================
-
-  const [observacao, setObservacao] =
-    useState('');
-
-  // ==========================================
-  // ENVIO
-  // ==========================================
-
-  const [enviando, setEnviando] =
-    useState(false);
-
-  // ==========================================
-  // BUSCA INTELIGENTE DA PLACA
-  // ==========================================
-
-  const [consultandoPlaca, setConsultandoPlaca] =
-    useState(false);
-
-  const [veiculoEncontrado, setVeiculoEncontrado] =
-    useState<VeiculoEncontrado | null>(null);
-
-  const [mostrarVeiculoEncontrado, setMostrarVeiculoEncontrado] =
-    useState(false);
-
-  // ==========================================
-  // CONTROLE DA ÚLTIMA PLACA CONSULTADA
-  // ==========================================
-
-  const ultimaPlacaConsultada =
-    useRef('');
-
-  // ==========================================
-  // CONTROLE DA RESTAURAÇÃO
-  // ==========================================
-
-  const restauracaoConcluida =
-    useRef(false);
-
-  // ==========================================
-  // RESTAURAR FUNCIONÁRIO DO CELULAR
-  // ==========================================
+  const restauracaoConcluida = useRef(false)
 
   useEffect(() => {
-
     try {
-
-      const salvo =
-        localStorage.getItem(
-          FUNCIONARIO_STORAGE_KEY
-        );
+      const salvo = localStorage.getItem(
+        FUNCIONARIO_STORAGE_KEY,
+      )
 
       if (!salvo) {
-        return;
+        return
       }
 
       const dados =
-        JSON.parse(
-          salvo
-        ) as FuncionarioLocal;
+        JSON.parse(salvo) as FuncionarioLocal
 
       if (
         dados &&
@@ -227,279 +366,805 @@ function App() {
         dados.nome &&
         dados.codigo_acesso
       ) {
-
-        setFuncionario(
-          dados
-        );
-
-        console.log(
-          'FUNCIONÁRIO RESTAURADO:',
-          dados.nome
-        );
+        setFuncionario(dados)
       }
-
     } catch (error) {
-
       console.error(
         'ERRO AO RESTAURAR FUNCIONÁRIO:',
-        error
-      );
+        error,
+      )
 
       localStorage.removeItem(
-        FUNCIONARIO_STORAGE_KEY
-      );
+        FUNCIONARIO_STORAGE_KEY,
+      )
     }
-
-  }, []);
-
-  // ==========================================
-  // ENTRAR COMO FUNCIONÁRIO
-  // ==========================================
+  }, [])
 
   async function entrarComoFuncionario() {
+    const codigo = codigoFuncionario
+      .trim()
+      .replace(/\D/g, '')
+      .slice(0, 3)
 
-    const codigo =
-      codigoFuncionario
-        .trim()
-        .replace(
-          /\D/g,
-          ''
-        )
-        .slice(
-          0,
-          3
-        );
-
-    setErroFuncionario('');
+    setErroFuncionario('')
 
     if (!codigo) {
-
       setErroFuncionario(
-        'Digite o código do funcionário.'
-      );
+        'Digite o código do funcionário.',
+      )
 
-      return;
+      return
     }
 
-    setBuscandoFuncionario(
-      true
-    );
+    setBuscandoFuncionario(true)
 
     try {
-
-      console.log(
-        'BUSCANDO FUNCIONÁRIO PELA RPC:',
-        codigo
-      );
-
       const {
         data,
         error,
-      } =
-        await supabase.rpc(
-          'buscar_funcionario_por_codigo',
-          {
-            p_codigo: codigo,
-          }
-        );
+      } = await supabase.rpc(
+        'buscar_funcionario_por_codigo',
+        {
+          p_codigo: codigo,
+        },
+      )
 
       if (error) {
-
         console.error(
           'ERRO AO BUSCAR FUNCIONÁRIO:',
-          error
-        );
+          error,
+        )
 
         setErroFuncionario(
-          `Não foi possível identificar o funcionário: ${error.message}`
-        );
+          `Não foi possível identificar o funcionário: ${error.message}`,
+        )
 
-        return;
+        return
       }
 
       const funcionarioEncontrado =
-        Array.isArray(data)
-          ? data[0]
-          : null;
+        Array.isArray(data) ? data[0] : null
 
       if (!funcionarioEncontrado) {
-
         setErroFuncionario(
-          'Código não encontrado ou funcionário inativo.'
-        );
+          'Código não encontrado ou funcionário inativo.',
+        )
 
-        return;
+        return
       }
 
-      const funcionarioLocal:
-        FuncionarioLocal = {
-
-        id:
-          funcionarioEncontrado.id,
-
-        nome:
-          funcionarioEncontrado.nome,
-
-        codigo_acesso:
-          funcionarioEncontrado.codigo_acesso,
-
-        empresa_id:
-          funcionarioEncontrado.empresa_id ?? null,
-      };
+      const funcionarioLocal: FuncionarioLocal =
+        {
+          id: funcionarioEncontrado.id,
+          nome: funcionarioEncontrado.nome,
+          codigo_acesso:
+            funcionarioEncontrado.codigo_acesso,
+          empresa_id:
+            funcionarioEncontrado.empresa_id ??
+            null,
+        }
 
       localStorage.setItem(
         FUNCIONARIO_STORAGE_KEY,
-        JSON.stringify(
-          funcionarioLocal
-        )
-      );
+        JSON.stringify(funcionarioLocal),
+      )
 
-      setFuncionario(
-        funcionarioLocal
-      );
+      setFuncionario(funcionarioLocal)
 
-      setCodigoFuncionario('');
-
-      setErroFuncionario('');
-
-      console.log(
-        'FUNCIONÁRIO IDENTIFICADO:',
-        funcionarioLocal.nome
-      );
-
+      setCodigoFuncionario('')
+      setErroFuncionario('')
     } catch (error) {
-
       console.error(
         'ERRO AO IDENTIFICAR FUNCIONÁRIO:',
-        error
-      );
+        error,
+      )
 
       setErroFuncionario(
-        'Não foi possível identificar o funcionário.'
-      );
-
+        'Não foi possível identificar o funcionário.',
+      )
     } finally {
-
-      setBuscandoFuncionario(
-        false
-      );
+      setBuscandoFuncionario(false)
     }
   }
 
-  // ==========================================
-  // TROCAR FUNCIONÁRIO
-  // ==========================================
-
   function trocarFuncionario() {
-
     if (enviando) {
-      return;
+      return
     }
 
-    const confirmar =
-      window.confirm(
-        'Deseja trocar o funcionário deste celular?'
-      );
+    const confirmar = window.confirm(
+      'Deseja trocar o funcionário deste celular?',
+    )
 
     if (!confirmar) {
-      return;
+      return
     }
 
     localStorage.removeItem(
-      FUNCIONARIO_STORAGE_KEY
-    );
+      FUNCIONARIO_STORAGE_KEY,
+    )
 
-    setFuncionario(
-      null
-    );
-
-    setCodigoFuncionario('');
-
-    setErroFuncionario('');
+    setFuncionario(null)
+    setCodigoFuncionario('')
+    setErroFuncionario('')
+    setTelaPrincipal('entrada')
   }
 
-  // ==========================================
-  // CONVERTER FILE PARA BASE64
-  // ==========================================
+  const carregarMinhasOrdens =
+    useCallback(async () => {
+      if (
+        !funcionario?.id ||
+        !funcionario.codigo_acesso
+      ) {
+        return
+      }
+
+      try {
+        setCarregandoOrdens(true)
+        setErroOrdens('')
+
+        const {
+          data,
+          error,
+        } = await supabase.rpc(
+          'buscar_minhas_ordens_por_codigo',
+          {
+            p_codigo:
+              funcionario.codigo_acesso,
+          },
+        )
+
+        if (error) {
+          throw error
+        }
+
+        setMinhasOrdens(
+          (data ?? []) as OrdemServicoPWA[],
+        )
+      } catch (error: any) {
+        console.error(
+          'ERRO AO CARREGAR MINHAS OS:',
+          error,
+        )
+
+        setMinhasOrdens([])
+
+        setErroOrdens(
+          error?.message ||
+            'Não foi possível carregar suas Ordens de Serviço.',
+        )
+      } finally {
+        setCarregandoOrdens(false)
+      }
+    }, [
+      funcionario?.id,
+      funcionario?.codigo_acesso,
+    ])
+
+  useEffect(() => {
+    if (
+      funcionario?.id &&
+      telaPrincipal === 'ordens'
+    ) {
+      void carregarMinhasOrdens()
+    }
+  }, [
+    funcionario?.id,
+    telaPrincipal,
+    carregarMinhasOrdens,
+  ])
+
+  async function abrirMinhaOS(
+    ordem: OrdemServicoPWA,
+  ) {
+    try {
+      setCarregandoDetalhesOS(true)
+      setErroOrdens('')
+
+      setOrdemAberta(ordem)
+      setEntradaDaOrdem(null)
+      setTarefasOriginais([])
+
+      const entradaPromise =
+        ordem.entrada_id
+          ? supabase
+              .from('entradas_veiculos')
+              .select(
+                `
+                id,
+                empresa_id,
+                placa,
+                ano,
+                modelo,
+                cliente_nome,
+                telefone,
+                observacao,
+                frota,
+                criado_em,
+                tipo_entrada,
+                tipo_peca,
+                descricao_peca,
+                foto_url,
+                foto_url_2
+              `,
+              )
+              .eq('id', ordem.entrada_id)
+              .maybeSingle()
+          : Promise.resolve({
+              data: null,
+              error: null,
+            })
+
+      const tarefasPromise =
+        supabase
+          .from('os_tarefas')
+          .select(
+            `
+            id,
+            ordem_servico_id,
+            responsavel_id,
+            titulo,
+            descricao,
+            quantidade,
+            valor_unitario,
+            valor_total,
+            ordem
+          `,
+          )
+          .eq(
+            'ordem_servico_id',
+            ordem.id,
+          )
+          .order('ordem', {
+            ascending: true,
+          })
+
+      const [
+        entradaResult,
+        tarefasResult,
+      ] = await Promise.all([
+        entradaPromise,
+        tarefasPromise,
+      ])
+
+      if (entradaResult.error) {
+        throw entradaResult.error
+      }
+
+      if (tarefasResult.error) {
+        throw tarefasResult.error
+      }
+
+      setEntradaDaOrdem(
+        entradaResult.data as EntradaOS | null,
+      )
+
+      const tarefas =
+        (tarefasResult.data ??
+          []) as TarefaExistente[]
+
+      setTarefasOriginais(tarefas)
+
+      if (tarefas.length > 0) {
+        const linhasExistentes =
+          tarefas.map(tarefa => ({
+            id: tarefa.id,
+            descricao:
+              tarefa.descricao?.trim() ||
+              tarefa.titulo?.trim() ||
+              '',
+            quantidade: String(
+              tarefa.quantidade ?? 1,
+            ),
+            valor: Number(
+              tarefa.valor_unitario ??
+                tarefa.valor_total ??
+                0,
+            )
+              .toFixed(2)
+              .replace('.', ','),
+          }))
+
+        if (
+          !statusOSFechada(ordem.status)
+        ) {
+          linhasExistentes.push(
+            criarLinhaServico(),
+          )
+        }
+
+        setLinhasServico(
+          linhasExistentes,
+        )
+      } else {
+        setLinhasServico([
+          criarLinhaServico(),
+          criarLinhaServico(),
+          criarLinhaServico(),
+          criarLinhaServico(),
+          criarLinhaServico(),
+        ])
+      }
+    } catch (error: any) {
+      console.error(
+        'ERRO AO ABRIR OS:',
+        error,
+      )
+
+      setErroOrdens(
+        error?.message ||
+          'Não foi possível abrir a Ordem de Serviço.',
+      )
+
+      setLinhasServico([
+        criarLinhaServico(),
+        criarLinhaServico(),
+        criarLinhaServico(),
+        criarLinhaServico(),
+        criarLinhaServico(),
+      ])
+    } finally {
+      setCarregandoDetalhesOS(false)
+    }
+  }
+
+  const osEditavel =
+    !!ordemAberta &&
+    !statusOSFechada(ordemAberta.status)
+
+  function adicionarLinhaServico() {
+    if (!osEditavel) {
+      return
+    }
+
+    setLinhasServico(anterior => [
+      ...anterior,
+      criarLinhaServico(),
+    ])
+  }
+
+  function atualizarLinhaServico(
+    index: number,
+    campo:
+      | 'descricao'
+      | 'quantidade'
+      | 'valor',
+    valor: string,
+  ) {
+    if (!osEditavel) {
+      return
+    }
+
+    setLinhasServico(anterior => {
+      const novas = [...anterior]
+
+      novas[index] = {
+        ...novas[index],
+        [campo]: valor,
+      }
+
+      return novas
+    })
+  }
+
+  const totalOrdemAberta =
+    linhasServico.reduce(
+      (total, linha) => {
+        const quantidade =
+          converterNumero(
+            linha.quantidade,
+          ) || 1
+
+        const valor =
+          converterNumero(linha.valor)
+
+        return (
+          total +
+          quantidade * valor
+        )
+      },
+      0,
+    )
+
+  async function finalizarEnviarOS() {
+    if (
+      !ordemAberta ||
+      !funcionario
+    ) {
+      return
+    }
+
+    if (!osEditavel) {
+      alert(
+        'Esta O.S. está encerrada e está disponível somente para visualização.',
+      )
+
+      return
+    }
+
+    try {
+      setFinalizandoOS(true)
+
+      const linhasPreenchidas =
+        linhasServico
+          .map((linha, index) => {
+            const quantidade =
+              converterNumero(
+                linha.quantidade,
+              )
+
+            const valor =
+              converterNumero(linha.valor)
+
+            return {
+              ...linha,
+              index,
+              descricao:
+                linha.descricao.trim(),
+              quantidadeNumero:
+                quantidade > 0
+                  ? quantidade
+                  : 1,
+              valorNumero: valor,
+            }
+          })
+          .filter(
+            linha =>
+              linha.descricao ||
+              linha.valorNumero > 0,
+          )
+
+      let total = 0
+
+      const idsMantidos =
+        new Set<string>()
+
+      for (
+        let i = 0;
+        i < linhasPreenchidas.length;
+        i++
+      ) {
+        const linha =
+          linhasPreenchidas[i]
+
+        const quantidade =
+          linha.quantidadeNumero
+
+        const valor =
+          linha.valorNumero
+
+        const valorTotal =
+          quantidade * valor
+
+        total += valorTotal
+
+        if (linha.id) {
+          idsMantidos.add(
+            linha.id,
+          )
+
+          const { error } =
+            await supabase
+              .from('os_tarefas')
+              .update({
+                responsavel_id:
+                  funcionario.id,
+                titulo:
+                  linha.descricao ||
+                  'Serviço / Peça',
+                descricao:
+                  linha.descricao ||
+                  null,
+                quantidade,
+                valor_unitario:
+                  valor,
+                valor_total:
+                  valorTotal,
+                ordem: i + 1,
+                status: 'concluida',
+                data_conclusao:
+                  new Date().toISOString(),
+                updated_at:
+                  new Date().toISOString(),
+              })
+              .eq(
+                'id',
+                linha.id,
+              )
+              .eq(
+                'ordem_servico_id',
+                ordemAberta.id,
+              )
+
+          if (error) {
+            throw error
+          }
+        } else {
+          const {
+            data: novaTarefa,
+            error,
+          } = await supabase
+            .from('os_tarefas')
+            .insert({
+              ordem_servico_id:
+                ordemAberta.id,
+              servico_id: null,
+              responsavel_id:
+                funcionario.id,
+              titulo:
+                linha.descricao ||
+                'Serviço / Peça',
+              descricao:
+                linha.descricao ||
+                null,
+              tipo: 'servico',
+              status: 'concluida',
+              prioridade: 'normal',
+              ordem: i + 1,
+              quantidade,
+              valor_unitario:
+                valor,
+              valor_total:
+                valorTotal,
+              data_conclusao:
+                new Date().toISOString(),
+              updated_at:
+                new Date().toISOString(),
+            })
+            .select('id')
+            .maybeSingle()
+
+          if (error) {
+            throw error
+          }
+
+          if (novaTarefa?.id) {
+            idsMantidos.add(
+              novaTarefa.id,
+            )
+          }
+        }
+      }
+
+      const idsAntigos =
+        tarefasOriginais.map(
+          tarefa => tarefa.id,
+        )
+
+      const idsParaExcluir =
+        idsAntigos.filter(
+          tarefaId =>
+            !idsMantidos.has(
+              tarefaId,
+            ),
+        )
+
+      if (idsParaExcluir.length > 0) {
+        const {
+          error: erroExclusao,
+        } = await supabase
+          .from('os_tarefas')
+          .delete()
+          .in('id', idsParaExcluir)
+          .eq(
+            'ordem_servico_id',
+            ordemAberta.id,
+          )
+
+        if (erroExclusao) {
+          console.warn(
+            'Não foi possível excluir tarefas removidas:',
+            erroExclusao,
+          )
+        }
+      }
+
+      const agora =
+        new Date().toISOString()
+
+      const {
+        data: osAtualizada,
+        error: erroOS,
+      } = await supabase
+        .from('ordens_servico')
+        .update({
+          status: 'servico_finalizado',
+          responsavel_id:
+            funcionario.id,
+          valor_servicos: total,
+          valor_pecas: 0,
+          valor_total: total,
+          data_conclusao: agora,
+          updated_at: agora,
+        })
+        .eq('id', ordemAberta.id)
+        .eq(
+          'responsavel_id',
+          funcionario.id,
+        )
+        .select(`
+          id,
+          empresa_id,
+          entrada_id,
+          responsavel_id,
+          numero,
+          titulo,
+          descricao,
+          status,
+          prioridade,
+          data_entrada,
+          data_inicio,
+          data_conclusao,
+          observacoes,
+          percentual_comissao,
+          valor_servicos,
+          valor_pecas,
+          valor_total,
+          valor_comissao,
+          updated_at
+        `)
+        .maybeSingle()
+
+      if (erroOS) {
+        throw erroOS
+      }
+
+      if (!osAtualizada) {
+        throw new Error(
+          'A O.S. não pôde ser finalizada. Verifique se você continua sendo o responsável por ela.',
+        )
+      }
+
+      setMinhasOrdens(anterior =>
+        anterior.map(ordem =>
+          ordem.id === ordemAberta.id
+            ? {
+                ...ordem,
+                status:
+                  'servico_finalizado',
+                responsavel_id:
+                  funcionario.id,
+                valor_servicos: total,
+                valor_pecas: 0,
+                valor_total: total,
+                data_conclusao:
+                  agora,
+                updated_at: agora,
+              }
+            : ordem,
+        ),
+      )
+
+      await abrirMinhaOS(
+        osAtualizada as OrdemServicoPWA,
+      )
+
+      alert(
+        'O.S. finalizada e enviada com sucesso!',
+      )
+    } catch (error: any) {
+      console.error(
+        'ERRO AO FINALIZAR OS:',
+        error,
+      )
+
+      alert(
+        error?.message ||
+          'Não foi possível finalizar a O.S.',
+      )
+    } finally {
+      setFinalizandoOS(false)
+    }
+  }
+
+  function formatarDataHora(
+    data: string | null,
+  ) {
+    if (!data) {
+      return ''
+    }
+
+    const date = new Date(data)
+
+    if (
+      Number.isNaN(date.getTime())
+    ) {
+      return ''
+    }
+
+    return new Intl.DateTimeFormat(
+      'pt-BR',
+      {
+        dateStyle: 'short',
+        timeStyle: 'short',
+        timeZone: 'America/Cuiaba',
+      },
+    ).format(date)
+  }
+
+  function formatarMoeda(
+    valor:
+      | number
+      | string
+      | null
+      | undefined,
+  ) {
+    const numero = Number(valor || 0)
+
+    return new Intl.NumberFormat(
+      'pt-BR',
+      {
+        style: 'currency',
+        currency: 'BRL',
+      },
+    ).format(numero)
+  }
 
   function arquivoParaBase64(
-    arquivo: File
+    arquivo: File,
   ): Promise<string> {
-
     return new Promise(
-      (resolve, reject) => {
-
+      (
+        resolve,
+        reject,
+      ) => {
         const reader =
-          new FileReader();
+          new FileReader()
 
         reader.onload = () => {
-
           if (
             typeof reader.result ===
             'string'
           ) {
-
-            resolve(
-              reader.result
-            );
-
+            resolve(reader.result)
           } else {
-
             reject(
               new Error(
-                'Não foi possível ler a foto.'
-              )
-            );
+                'Não foi possível ler a foto.',
+              ),
+            )
           }
-        };
+        }
 
         reader.onerror = () => {
-
           reject(
             new Error(
-              'Erro ao ler a foto.'
-            )
-          );
-        };
+              'Erro ao ler a foto.',
+            ),
+          )
+        }
 
         reader.readAsDataURL(
-          arquivo
-        );
-      }
-    );
+          arquivo,
+        )
+      },
+    )
   }
-
-  // ==========================================
-  // CONVERTER BASE64 PARA FILE
-  // ==========================================
 
   function base64ParaArquivo(
     base64: string,
     nome: string,
-    tipo: string
+    tipo: string,
   ): File {
-
     const partes =
-      base64.split(',');
+      base64.split(',')
 
-    const dados =
-      atob(
-        partes[1]
-      );
+    const dados = atob(
+      partes[1],
+    )
 
     const bytes =
       new Uint8Array(
-        dados.length
-      );
+        dados.length,
+      )
 
     for (
       let i = 0;
       i < dados.length;
       i++
     ) {
-
       bytes[i] =
-        dados.charCodeAt(i);
+        dados.charCodeAt(i)
     }
 
     return new File(
@@ -509,66 +1174,49 @@ function App() {
         type:
           tipo ||
           'image/jpeg',
-      }
-    );
+      },
+    )
   }
-
-  // ==========================================
-  // SALVAR FORMULÁRIO LOCALMENTE
-  // ==========================================
 
   async function salvarFormulario(
     fotosAtuais?: {
       foto1?: {
-        base64: string;
-        nome: string;
-        tipo: string;
-      } | null;
+        base64: string
+        nome: string
+        tipo: string
+      } | null
 
       foto2?: {
-        base64: string;
-        nome: string;
-        tipo: string;
-      } | null;
-    } | null
+        base64: string
+        nome: string
+        tipo: string
+      } | null
+    } | null,
   ) {
-
     if (
       !restauracaoConcluida.current
     ) {
-      return;
+      return
     }
 
     try {
-
       const dados: DadosSalvos = {
-
         tipoEntrada,
-
         placa,
-
         modelo,
-
         frota,
-
         tiposPeca,
-
         descricaoPeca,
-
         cliente,
-
         telefone,
-
         observacao,
 
         foto1Base64:
           fotosAtuais?.foto1?.base64 ??
-          (
-            foto1 &&
-            foto1.startsWith('data:')
-              ? foto1
-              : null
-          ),
+          (foto1 &&
+          foto1.startsWith('data:')
+            ? foto1
+            : null),
 
         foto1Nome:
           fotosAtuais?.foto1?.nome ??
@@ -582,12 +1230,10 @@ function App() {
 
         foto2Base64:
           fotosAtuais?.foto2?.base64 ??
-          (
-            foto2 &&
-            foto2.startsWith('data:')
-              ? foto2
-              : null
-          ),
+          (foto2 &&
+          foto2.startsWith('data:')
+            ? foto2
+            : null),
 
         foto2Nome:
           fotosAtuais?.foto2?.nome ??
@@ -598,7 +1244,7 @@ function App() {
           fotosAtuais?.foto2?.tipo ??
           arquivoFoto2?.type ??
           null,
-      };
+      }
 
       const existeAlgumDado =
         dados.placa.trim() ||
@@ -610,155 +1256,119 @@ function App() {
         dados.telefone.trim() ||
         dados.observacao.trim() ||
         dados.foto1Base64 ||
-        dados.foto2Base64;
+        dados.foto2Base64
 
       if (!existeAlgumDado) {
-
         localStorage.removeItem(
-          STORAGE_KEY
-        );
+          STORAGE_KEY,
+        )
 
-        return;
+        return
       }
 
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify(
-          dados
-        )
-      );
-
+        JSON.stringify(dados),
+      )
     } catch (error) {
-
       console.error(
-        'ERRO AO SALVAR FORMULÁRIO LOCALMENTE:',
-        error
-      );
+        'ERRO AO SALVAR FORMULÁRIO:',
+        error,
+      )
     }
   }
 
-  // ==========================================
-  // RESTAURAR FORMULÁRIO
-  // ==========================================
-
   useEffect(() => {
-
     async function restaurarFormulario() {
-
       try {
-
         const salvo =
           localStorage.getItem(
-            STORAGE_KEY
-          );
+            STORAGE_KEY,
+          )
 
         if (!salvo) {
-
           restauracaoConcluida.current =
-            true;
+            true
 
-          return;
+          return
         }
 
         const dados =
           JSON.parse(
-            salvo
-          ) as Partial<DadosSalvos>;
+            salvo,
+          ) as Partial<DadosSalvos>
 
-        if (
-          dados.tipoEntrada
-        ) {
-
+        if (dados.tipoEntrada) {
           setTipoEntrada(
-            dados.tipoEntrada
-          );
+            dados.tipoEntrada,
+          )
         }
 
-        setPlaca(
-          dados.placa || ''
-        );
-
-        setModelo(
-          dados.modelo || ''
-        );
-
-        setFrota(
-          dados.frota || ''
-        );
+        setPlaca(dados.placa || '')
+        setModelo(dados.modelo || '')
+        setFrota(dados.frota || '')
 
         setTiposPeca(
           Array.isArray(
-            dados.tiposPeca
+            dados.tiposPeca,
           )
             ? dados.tiposPeca
-            : []
-        );
+            : [],
+        )
 
         setDescricaoPeca(
-          dados.descricaoPeca || ''
-        );
+          dados.descricaoPeca ||
+            '',
+        )
 
         setCliente(
-          dados.cliente || ''
-        );
+          dados.cliente || '',
+        )
 
         setTelefone(
-          dados.telefone || ''
-        );
+          dados.telefone || '',
+        )
 
         setObservacao(
-          dados.observacao || ''
-        );
+          dados.observacao ||
+            '',
+        )
 
-        if (
-          dados.foto1Base64
-        ) {
-
+        if (dados.foto1Base64) {
           setFoto1(
-            dados.foto1Base64
-          );
+            dados.foto1Base64,
+          )
 
           if (
             dados.foto1Nome &&
             dados.foto1Tipo
           ) {
-
-            const arquivo =
+            setArquivoFoto1(
               base64ParaArquivo(
                 dados.foto1Base64,
                 dados.foto1Nome,
-                dados.foto1Tipo
-              );
-
-            setArquivoFoto1(
-              arquivo
-            );
+                dados.foto1Tipo,
+              ),
+            )
           }
         }
 
-        if (
-          dados.foto2Base64
-        ) {
-
+        if (dados.foto2Base64) {
           setFoto2(
-            dados.foto2Base64
-          );
+            dados.foto2Base64,
+          )
 
           if (
             dados.foto2Nome &&
             dados.foto2Tipo
           ) {
-
-            const arquivo =
+            setArquivoFoto2(
               base64ParaArquivo(
                 dados.foto2Base64,
                 dados.foto2Nome,
-                dados.foto2Tipo
-              );
-
-            setArquivoFoto2(
-              arquivo
-            );
+                dados.foto2Tipo,
+              ),
+            )
           }
         }
 
@@ -766,66 +1376,42 @@ function App() {
           dados.placa &&
           dados.placa.length === 7
         ) {
-
           ultimaPlacaConsultada.current =
-            dados.placa;
+            dados.placa
         }
-
-        console.log(
-          'FORMULÁRIO ANTERIOR RESTAURADO.'
-        );
-
       } catch (error) {
-
         console.error(
           'ERRO AO RESTAURAR FORMULÁRIO:',
-          error
-        );
+          error,
+        )
 
         localStorage.removeItem(
-          STORAGE_KEY
-        );
-
+          STORAGE_KEY,
+        )
       } finally {
-
         restauracaoConcluida.current =
-          true;
+          true
       }
     }
 
-    restaurarFormulario();
-
-  }, []);
-
-  // ==========================================
-  // SALVAR AUTOMATICAMENTE
-  // ==========================================
+    void restaurarFormulario()
+  }, [])
 
   useEffect(() => {
-
     if (
       !restauracaoConcluida.current
     ) {
-      return;
+      return
     }
 
     const timer =
-      window.setTimeout(
-        () => {
-
-          void salvarFormulario();
-
-        },
-        300
-      );
+      window.setTimeout(() => {
+        void salvarFormulario()
+      }, 300)
 
     return () => {
-
-      window.clearTimeout(
-        timer
-      );
-    };
-
+      window.clearTimeout(timer)
+    }
   }, [
     tipoEntrada,
     placa,
@@ -840,914 +1426,551 @@ function App() {
     arquivoFoto1,
     foto2,
     arquivoFoto2,
-  ]);
-
-  // ==========================================
-  // ABRIR CÂMERA 1
-  // ==========================================
+  ])
 
   function abrirCamera1() {
-
     if (enviando) {
-      return;
+      return
     }
 
-    cameraInput1Ref.current?.click();
+    cameraInput1Ref.current?.click()
   }
-
-  // ==========================================
-  // ABRIR CÂMERA 2
-  // ==========================================
 
   function abrirCamera2() {
-
     if (enviando) {
-      return;
+      return
     }
 
-    cameraInput2Ref.current?.click();
+    cameraInput2Ref.current?.click()
   }
 
-  // ==========================================
-  // SELECIONAR FOTO 1
-  // ==========================================
-
   async function selecionarFoto1(
-    event: ChangeEvent<HTMLInputElement>
+    event: ChangeEvent<HTMLInputElement>,
   ) {
-
     const arquivo =
-      event.target.files?.[0];
+      event.target.files?.[0]
 
     if (!arquivo) {
-      return;
+      return
     }
 
     try {
-
       const base64 =
         await arquivoParaBase64(
-          arquivo
-        );
+          arquivo,
+        )
 
       setArquivoFoto1(
-        arquivo
-      );
+        arquivo,
+      )
 
-      setFoto1(
-        base64
-      );
+      setFoto1(base64)
 
       await salvarFormulario({
         foto1: {
           base64,
-          nome:
-            arquivo.name,
+          nome: arquivo.name,
           tipo:
             arquivo.type ||
             'image/jpeg',
         },
-      });
-
+      })
     } catch (error) {
-
       console.error(
-        'ERRO AO SALVAR FOTO 1:',
-        error
-      );
+        'ERRO FOTO 1:',
+        error,
+      )
 
       alert(
-        'Não foi possível salvar a primeira foto. Tente novamente.'
-      );
+        'Não foi possível salvar a primeira foto.',
+      )
     }
 
     if (
       cameraInput1Ref.current
     ) {
-
       cameraInput1Ref.current.value =
-        '';
+        ''
     }
   }
 
-  // ==========================================
-  // SELECIONAR FOTO 2
-  // ==========================================
-
   async function selecionarFoto2(
-    event: ChangeEvent<HTMLInputElement>
+    event: ChangeEvent<HTMLInputElement>,
   ) {
-
     const arquivo =
-      event.target.files?.[0];
+      event.target.files?.[0]
 
     if (!arquivo) {
-      return;
+      return
     }
 
     try {
-
       const base64 =
         await arquivoParaBase64(
-          arquivo
-        );
+          arquivo,
+        )
 
       setArquivoFoto2(
-        arquivo
-      );
+        arquivo,
+      )
 
-      setFoto2(
-        base64
-      );
+      setFoto2(base64)
 
       await salvarFormulario({
         foto2: {
           base64,
-          nome:
-            arquivo.name,
+          nome: arquivo.name,
           tipo:
             arquivo.type ||
             'image/jpeg',
         },
-      });
-
+      })
     } catch (error) {
-
       console.error(
-        'ERRO AO SALVAR FOTO 2:',
-        error
-      );
+        'ERRO FOTO 2:',
+        error,
+      )
 
       alert(
-        'Não foi possível salvar a segunda foto. Tente novamente.'
-      );
+        'Não foi possível salvar a segunda foto.',
+      )
     }
 
     if (
       cameraInput2Ref.current
     ) {
-
       cameraInput2Ref.current.value =
-        '';
+        ''
     }
   }
 
-  // ==========================================
-  // CONSULTAR PLACA
-  // ==========================================
-
   async function consultarPlaca(
-    placaDigitada: string
+    placaDigitada: string,
   ) {
-
     const placaLimpa =
       placaDigitada
         .trim()
         .toUpperCase()
-        .replace(
-          /[^A-Z0-9]/g,
-          ''
-        );
+        .replace(/[^A-Z0-9]/g, '')
 
-    if (
-      placaLimpa.length !== 7
-    ) {
-
-      return;
+    if (placaLimpa.length !== 7) {
+      return
     }
 
     if (
       ultimaPlacaConsultada.current ===
       placaLimpa
     ) {
-
-      return;
+      return
     }
 
     ultimaPlacaConsultada.current =
-      placaLimpa;
+      placaLimpa
 
-    setConsultandoPlaca(
-      true
-    );
+    setConsultandoPlaca(true)
 
     try {
-
-      console.log(
-        'Consultando placa:',
-        placaLimpa
-      );
-
       const {
         data,
         error,
-      } =
-        await supabase
-          .from(
-            'entradas_veiculos'
-          )
-          .select(
-            `
-              id,
-              placa,
-              modelo,
-              frota,
-              cliente_nome,
-              telefone
-            `
-          )
-          .eq(
-            'placa',
-            placaLimpa
-          )
-          .order(
-            'criado_em',
-            {
-              ascending:
-                false,
-            }
-          )
-          .limit(1)
-          .maybeSingle();
+      } = await supabase
+        .from('entradas_veiculos')
+        .select(
+          `
+          id,
+          placa,
+          modelo,
+          frota,
+          cliente_nome,
+          telefone
+        `,
+        )
+        .eq('placa', placaLimpa)
+        .order('criado_em', {
+          ascending: false,
+        })
+        .limit(1)
+        .maybeSingle()
 
       if (error) {
-
         console.error(
           'ERRO AO CONSULTAR PLACA:',
-          error
-        );
+          error,
+        )
 
-        return;
+        return
       }
 
       if (!data) {
-
-        console.log(
-          'PLACA NÃO ENCONTRADA NO BANCO.'
-        );
-
-        return;
+        return
       }
 
-      console.log(
-        'VEÍCULO ENCONTRADO:',
-        data
-      );
-
       setVeiculoEncontrado(
-        data as VeiculoEncontrado
-      );
+        data as VeiculoEncontrado,
+      )
 
-      setMostrarVeiculoEncontrado(
-        true
-      );
-
+      setMostrarVeiculoEncontrado(true)
     } catch (error) {
-
       console.error(
-        'ERRO GERAL AO CONSULTAR PLACA:',
-        error
-      );
-
+        'ERRO GERAL PLACA:',
+        error,
+      )
     } finally {
-
-      setConsultandoPlaca(
-        false
-      );
+      setConsultandoPlaca(false)
     }
   }
 
-  // ==========================================
-  // ALTERAR PLACA
-  // ==========================================
-
-  function alterarPlaca(
-    valor: string
-  ) {
-
+  function alterarPlaca(valor: string) {
     const placaFormatada =
       valor
         .toUpperCase()
-        .replace(
-          /[^A-Z0-9]/g,
-          ''
-        )
-        .slice(
-          0,
-          7
-        );
+        .replace(/[^A-Z0-9]/g, '')
+        .slice(0, 7)
 
-    setPlaca(
-      placaFormatada
-    );
+    setPlaca(placaFormatada)
 
-    if (
-      placaFormatada.length < 7
-    ) {
-
+    if (placaFormatada.length < 7) {
       ultimaPlacaConsultada.current =
-        '';
+        ''
 
-      setVeiculoEncontrado(
-        null
-      );
+      setVeiculoEncontrado(null)
 
-      setMostrarVeiculoEncontrado(
-        false
-      );
+      setMostrarVeiculoEncontrado(false)
 
-      return;
+      return
     }
 
-    consultarPlaca(
-      placaFormatada
-    );
+    void consultarPlaca(
+      placaFormatada,
+    )
   }
 
-  // ==========================================
-  // USAR CADASTRO ENCONTRADO
-  // ==========================================
-
   function usarCadastroEncontrado() {
-
     if (!veiculoEncontrado) {
-      return;
+      return
     }
 
     setPlaca(
-      veiculoEncontrado.placa
-        ?.toUpperCase() || ''
-    );
+      veiculoEncontrado.placa?.toUpperCase() ||
+        '',
+    )
 
     setModelo(
-      veiculoEncontrado.modelo || ''
-    );
+      veiculoEncontrado.modelo || '',
+    )
 
     setFrota(
-      veiculoEncontrado.frota || ''
-    );
+      veiculoEncontrado.frota || '',
+    )
 
     setCliente(
       veiculoEncontrado.cliente_nome ||
-      ''
-    );
+        '',
+    )
 
     setTelefone(
       veiculoEncontrado.telefone ||
-      ''
-    );
+        '',
+    )
 
-    setMostrarVeiculoEncontrado(
-      false
-    );
-
-    console.log(
-      'CADASTRO ANTERIOR UTILIZADO.'
-    );
+    setMostrarVeiculoEncontrado(false)
   }
-
-  // ==========================================
-  // NÃO USAR CADASTRO
-  // ==========================================
 
   function cadastrarOutroVeiculo() {
-
-    setMostrarVeiculoEncontrado(
-      false
-    );
-
-    console.log(
-      'USUÁRIO ESCOLHEU CADASTRAR OUTRO VEÍCULO.'
-    );
+    setMostrarVeiculoEncontrado(false)
   }
-
-  // ==========================================
-  // TROCAR TIPO
-  // ==========================================
 
   function trocarTipoEntrada(
-    tipo: TipoEntrada
+    tipo: TipoEntrada,
   ) {
+    setTipoEntrada(tipo)
 
-    setTipoEntrada(
-      tipo
-    );
-
-    if (
-      tipo === 'veiculo'
-    ) {
-
-      setTiposPeca(
-        []
-      );
-
-      setDescricaoPeca(
-        ''
-      );
+    if (tipo === 'veiculo') {
+      setTiposPeca([])
+      setDescricaoPeca('')
     }
 
-    if (
-      tipo === 'peca'
-    ) {
-
-      setPlaca(
-        ''
-      );
-
-      setFrota(
-        ''
-      );
+    if (tipo === 'peca') {
+      setPlaca('')
+      setFrota('')
 
       ultimaPlacaConsultada.current =
-        '';
+        ''
 
-      setVeiculoEncontrado(
-        null
-      );
-
-      setMostrarVeiculoEncontrado(
-        false
-      );
+      setVeiculoEncontrado(null)
+      setMostrarVeiculoEncontrado(false)
     }
   }
 
-  // ==========================================
-  // SELECIONAR / DESELECIONAR PEÇA
-  // ==========================================
-
   function alternarTipoPeca(
-    tipo: TipoPeca
+    tipo: TipoPeca,
   ) {
-
-    setTiposPeca(
-      atual => {
-
-        if (
-          atual.includes(tipo)
-        ) {
-
-          return atual.filter(
-            item => item !== tipo
-          );
-        }
-
-        return [
-          ...atual,
-          tipo,
-        ];
+    setTiposPeca(atual => {
+      if (atual.includes(tipo)) {
+        return atual.filter(
+          item => item !== tipo,
+        )
       }
-    );
+
+      return [...atual, tipo]
+    })
   }
 
-  // ==========================================
-  // LIMPAR FORMULÁRIO
-  // ==========================================
-
   function limparFormulario() {
+    setFoto1(null)
+    setArquivoFoto1(null)
 
-    setFoto1(
-      null
-    );
+    setFoto2(null)
+    setArquivoFoto2(null)
 
-    setArquivoFoto1(
-      null
-    );
+    setPlaca('')
+    setModelo('')
+    setFrota('')
 
-    setFoto2(
-      null
-    );
+    setTiposPeca([])
 
-    setArquivoFoto2(
-      null
-    );
+    setDescricaoPeca('')
 
-    setPlaca(
-      ''
-    );
+    setCliente('')
+    setTelefone('')
 
-    setModelo(
-      ''
-    );
+    setObservacao('')
 
-    setFrota(
-      ''
-    );
-
-    setTiposPeca(
-      []
-    );
-
-    setDescricaoPeca(
-      ''
-    );
-
-    setCliente(
-      ''
-    );
-
-    setTelefone(
-      ''
-    );
-
-    setObservacao(
-      ''
-    );
-
-    setTipoEntrada(
-      'veiculo'
-    );
+    setTipoEntrada('veiculo')
 
     ultimaPlacaConsultada.current =
-      '';
+      ''
 
-    setVeiculoEncontrado(
-      null
-    );
-
-    setMostrarVeiculoEncontrado(
-      false
-    );
+    setVeiculoEncontrado(null)
+    setMostrarVeiculoEncontrado(false)
 
     localStorage.removeItem(
-      STORAGE_KEY
-    );
+      STORAGE_KEY,
+    )
 
     if (
       cameraInput1Ref.current
     ) {
-
       cameraInput1Ref.current.value =
-        '';
+        ''
     }
 
     if (
       cameraInput2Ref.current
     ) {
-
       cameraInput2Ref.current.value =
-        '';
+        ''
     }
   }
-
-  // ==========================================
-  // NOME VISUAL DA PEÇA
-  // ==========================================
 
   function nomeTipoPeca(
-    tipo: TipoPeca
+    tipo: TipoPeca,
   ) {
-
     switch (tipo) {
-
       case 'bomba':
-        return 'BOMBA';
+        return 'BOMBA'
 
       case 'bico':
-        return 'BICO';
+        return 'BICO'
 
       case 'turbina':
-        return 'TURBINA';
+        return 'TURBINA'
 
       case 'outro':
-        return 'OUTRO';
+        return 'OUTRO'
 
       default:
-        return tipo;
+        return tipo
     }
   }
 
-  // ==========================================
-  // ENVIAR
-  // ==========================================
-
   async function enviar() {
-
-    // ========================================
-    // FUNCIONÁRIO
-    // ========================================
-
     if (!funcionario) {
-
       alert(
-        'Identifique o funcionário antes de registrar a entrada.'
-      );
+        'Identifique o funcionário antes de registrar a entrada.',
+      )
 
-      return;
+      return
     }
 
-    // ========================================
-    // FOTO 1
-    // ========================================
-
     if (!arquivoFoto1) {
-
       alert(
         tipoEntrada === 'veiculo'
           ? 'Tire a primeira foto da frente do veículo com a placa.'
-          : 'Tire uma foto da peça antes de enviar.'
-      );
+          : 'Tire uma foto da peça antes de enviar.',
+      )
 
-      return;
+      return
     }
-
-    // ========================================
-    // FOTO 2 PARA VEÍCULO
-    // ========================================
 
     if (
       tipoEntrada === 'veiculo' &&
       !arquivoFoto2
     ) {
-
       alert(
-        'Tire a segunda foto da lateral do veículo, mostrando o modelo.'
-      );
+        'Tire a segunda foto da lateral do veículo, mostrando o modelo.',
+      )
 
-      return;
+      return
     }
-
-    // ========================================
-    // VALIDAR VEÍCULO
-    // ========================================
 
     if (
       tipoEntrada === 'veiculo'
     ) {
-
-      if (
-        !placa.trim()
-      ) {
-
+      if (!placa.trim()) {
         alert(
-          'Digite a placa do veículo.'
-        );
+          'Digite a placa do veículo.',
+        )
 
-        return;
+        return
       }
 
-      if (
-        !modelo.trim()
-      ) {
-
+      if (!modelo.trim()) {
         alert(
-          'Digite o modelo do veículo.'
-        );
+          'Digite o modelo do veículo.',
+        )
 
-        return;
+        return
       }
     }
 
-    // ========================================
-    // VALIDAR PEÇA
-    // ========================================
-
-    if (
-      tipoEntrada === 'peca'
-    ) {
-
-      if (
-        tiposPeca.length === 0
-      ) {
-
+    if (tipoEntrada === 'peca') {
+      if (tiposPeca.length === 0) {
         alert(
-          'Selecione pelo menos um tipo de peça.'
-        );
+          'Selecione pelo menos um tipo de peça.',
+        )
 
-        return;
+        return
       }
 
-      if (
-        !descricaoPeca.trim()
-      ) {
-
+      if (!descricaoPeca.trim()) {
         alert(
-          'Digite a descrição da peça.'
-        );
+          'Digite a descrição da peça.',
+        )
 
-        return;
+        return
       }
 
-      if (
-        !modelo.trim()
-      ) {
-
+      if (!modelo.trim()) {
         alert(
-          'Digite o modelo do veículo onde a peça está aplicada.'
-        );
+          'Digite o modelo do veículo onde a peça está aplicada.',
+        )
 
-        return;
+        return
       }
     }
 
-    // ========================================
-    // CLIENTE
-    // ========================================
-
-    if (
-      !cliente.trim()
-    ) {
-
+    if (!cliente.trim()) {
       alert(
-        'Digite o nome do cliente.'
-      );
+        'Digite o nome do cliente.',
+      )
 
-      return;
+      return
     }
 
-    setEnviando(
-      true
-    );
+    setEnviando(true)
 
     try {
-
-      // ======================================
-      // 1. FOTO 1
-      // ======================================
-
       const extensao1 =
         arquivoFoto1.name
           .split('.')
           .pop()
           ?.toLowerCase() ||
-        'jpg';
+        'jpg'
 
       const nomeArquivo1 =
-        `${tipoEntrada}_frente_${Date.now()}.${extensao1}`;
+        `${tipoEntrada}_frente_${Date.now()}.${extensao1}`
 
       const caminho1 =
-        `entradas/${new Date().getFullYear()}/${nomeArquivo1}`;
-
-      console.log(
-        'ENVIANDO FOTO 1:',
-        caminho1
-      );
+        `entradas/${new Date().getFullYear()}/${nomeArquivo1}`
 
       const {
         error: erroFoto1,
-      } =
-        await supabase.storage
-          .from(
-            'fotos-entrada'
-          )
-          .upload(
-            caminho1,
-            arquivoFoto1,
-            {
-              contentType:
-                arquivoFoto1.type ||
-                'image/jpeg',
-
-              upsert:
-                false,
-            }
-          );
+      } = await supabase.storage
+        .from('fotos-entrada')
+        .upload(
+          caminho1,
+          arquivoFoto1,
+          {
+            contentType:
+              arquivoFoto1.type ||
+              'image/jpeg',
+            upsert: false,
+          },
+        )
 
       if (erroFoto1) {
-
-        console.error(
-          'ERRO STORAGE FOTO 1:',
-          erroFoto1
-        );
-
-        alert(
-          `ERRO AO ENVIAR FOTO 1:\n\n${erroFoto1.message}`
-        );
-
-        throw erroFoto1;
+        throw erroFoto1
       }
-
-      // ======================================
-      // 2. URL FOTO 1
-      // ======================================
 
       const {
         data: fotoPublica1,
-      } =
-        supabase.storage
-          .from(
-            'fotos-entrada'
-          )
-          .getPublicUrl(
-            caminho1
-          );
-
-      console.log(
-        'URL FOTO 1:',
-        fotoPublica1.publicUrl
-      );
-
-      // ======================================
-      // 3. FOTO 2
-      // ======================================
+      } = supabase.storage
+        .from('fotos-entrada')
+        .getPublicUrl(caminho1)
 
       let fotoPublica2:
-        string | null = null;
+        string | null = null
 
       if (
         tipoEntrada === 'veiculo' &&
         arquivoFoto2
       ) {
-
         const extensao2 =
           arquivoFoto2.name
             .split('.')
             .pop()
             ?.toLowerCase() ||
-          'jpg';
+          'jpg'
 
         const nomeArquivo2 =
-          `${tipoEntrada}_lateral_${Date.now()}.${extensao2}`;
+          `${tipoEntrada}_lateral_${Date.now()}.${extensao2}`
 
         const caminho2 =
-          `entradas/${new Date().getFullYear()}/${nomeArquivo2}`;
-
-        console.log(
-          'ENVIANDO FOTO 2:',
-          caminho2
-        );
+          `entradas/${new Date().getFullYear()}/${nomeArquivo2}`
 
         const {
           error: erroFoto2,
-        } =
-          await supabase.storage
-            .from(
-              'fotos-entrada'
-            )
-            .upload(
-              caminho2,
-              arquivoFoto2,
-              {
-                contentType:
-                  arquivoFoto2.type ||
-                  'image/jpeg',
-
-                upsert:
-                  false,
-              }
-            );
+        } = await supabase.storage
+          .from('fotos-entrada')
+          .upload(
+            caminho2,
+            arquivoFoto2,
+            {
+              contentType:
+                arquivoFoto2.type ||
+                'image/jpeg',
+              upsert: false,
+            },
+          )
 
         if (erroFoto2) {
-
-          console.error(
-            'ERRO STORAGE FOTO 2:',
-            erroFoto2
-          );
-
-          alert(
-            `ERRO AO ENVIAR FOTO 2:\n\n${erroFoto2.message}`
-          );
-
-          throw erroFoto2;
+          throw erroFoto2
         }
 
         const {
-          data:
-            fotoPublica2Data,
-        } =
-          supabase.storage
-            .from(
-              'fotos-entrada'
-            )
-            .getPublicUrl(
-              caminho2
-            );
+          data: fotoPublica2Data,
+        } = supabase.storage
+          .from('fotos-entrada')
+          .getPublicUrl(caminho2)
 
         fotoPublica2 =
-          fotoPublica2Data.publicUrl;
-
-        console.log(
-          'URL FOTO 2:',
-          fotoPublica2
-        );
+          fotoPublica2Data.publicUrl
       }
 
-      // ======================================
-      // 4. DADOS DA ENTRADA
-      // ======================================
-
       const dadosEntrada = {
-
-        /*
-         * FUNCIONÁRIO RESPONSÁVEL
-         *
-         * Este é o usuarios.id
-         */
         funcionario_id:
           funcionario.id,
 
         tipo_entrada:
           tipoEntrada,
 
-        placa:
-          placa.trim()
-            ? placa
-                .trim()
-                .toUpperCase()
-            : null,
+        placa: placa.trim()
+          ? placa.trim().toUpperCase()
+          : null,
 
         modelo:
-          modelo.trim() ||
-          null,
+          modelo.trim() || null,
 
         frota:
           frota.trim()
@@ -1757,9 +1980,7 @@ function App() {
         tipo_peca:
           tipoEntrada === 'peca'
             ? tiposPeca
-                .map(
-                  nomeTipoPeca
-                )
+                .map(nomeTipoPeca)
                 .join(', ')
             : null,
 
@@ -1777,8 +1998,7 @@ function App() {
           cliente.trim(),
 
         telefone:
-          telefone.trim() ||
-          null,
+          telefone.trim() || null,
 
         observacao:
           observacao.trim() ||
@@ -1789,224 +2009,88 @@ function App() {
 
         foto_url_2:
           fotoPublica2,
-      };
-
-      console.log(
-        '===================================='
-      );
-
-      console.log(
-        'FUNCIONÁRIO:',
-        funcionario.nome
-      );
-
-      console.log(
-        'FUNCIONARIO_ID:',
-        funcionario.id
-      );
-
-      console.log(
-        'DADOS DA ENTRADA:',
-        dadosEntrada
-      );
-
-      console.log(
-        '===================================='
-      );
-
-      // ======================================
-      // 5. INSERT
-      // ======================================
-
-      const {
-        data:
-          entradaCriada,
-        error:
-          erroEntrada,
-      } =
-        await supabase
-          .from(
-            'entradas_veiculos'
-          )
-          .insert(
-            dadosEntrada
-          )
-          .select()
-          .single();
-
-      // ======================================
-      // ERRO BANCO
-      // ======================================
-
-      if (erroEntrada) {
-
-        console.error(
-          'ERRO BANCO:',
-          erroEntrada
-        );
-
-        console.error(
-          'CÓDIGO:',
-          erroEntrada.code
-        );
-
-        console.error(
-          'MENSAGEM:',
-          erroEntrada.message
-        );
-
-        console.error(
-          'DETALHES:',
-          erroEntrada.details
-        );
-
-        console.error(
-          'HINT:',
-          erroEntrada.hint
-        );
-
-        alert(
-          `ERRO AO GRAVAR ENTRADA:\n\n` +
-          `Mensagem: ${erroEntrada.message}\n\n` +
-          `Código: ${erroEntrada.code || 'N/A'}\n\n` +
-          `Detalhes: ${erroEntrada.details || 'N/A'}`
-        );
-
-        throw erroEntrada;
       }
 
-      console.log(
-        'ENTRADA CRIADA:',
-        entradaCriada
-      );
+      const {
+        error: erroEntrada,
+      } = await supabase
+        .from('entradas_veiculos')
+        .insert(dadosEntrada)
 
-      // ======================================
-      // 6. SUCESSO
-      // ======================================
+      if (erroEntrada) {
+        throw erroEntrada
+      }
 
       alert(
         tipoEntrada === 'veiculo'
           ? `Entrada do veículo registrada!\n\nResponsável: ${funcionario.nome}`
-          : tiposPeca.length > 1
-            ? `Entrada registrada com ${tiposPeca.length} peças selecionadas!\n\nResponsável: ${funcionario.nome}`
-            : `Entrada da peça registrada com sucesso!\n\nResponsável: ${funcionario.nome}`
-      );
+          : `Entrada da peça registrada com sucesso!\n\nResponsável: ${funcionario.nome}`,
+      )
 
-      // ======================================
-      // 7. LIMPAR
-      // ======================================
+      limparFormulario()
 
-      limparFormulario();
-
-    } catch (error) {
-
+      setTelaPrincipal('entrada')
+    } catch (error: any) {
       console.error(
-        'ERRO GERAL AO REGISTRAR ENTRADA:',
-        error
-      );
-
-      if (
-        error &&
-        typeof error === 'object' &&
-        'message' in error
-      ) {
-
-        return;
-      }
+        'ERRO AO REGISTRAR ENTRADA:',
+        error,
+      )
 
       alert(
-        'Não foi possível registrar a entrada.'
-      );
-
+        error?.message ||
+          'Não foi possível registrar a entrada.',
+      )
     } finally {
-
-      setEnviando(
-        false
-      );
+      setEnviando(false)
     }
   }
 
-  // =========================================================
-  // TELA DE IDENTIFICAÇÃO
-  // =========================================================
-
   if (!funcionario) {
-
     return (
       <main className="login-page">
-
         <section
           className="login-card"
           style={{
-            maxWidth:
-              '420px',
+            maxWidth: '420px',
+            width: '100%',
           }}
         >
-
-          <div
-            className="login-brand"
-          >
-
-            <div
-              className="login-logo"
-            >
+          <div className="login-brand">
+            <div className="login-logo">
               DC
             </div>
 
             <h1>
-              DIESEL<span>CENTER</span>
+              DIESEL
+              <span>CENTER</span>
             </h1>
 
             <p>
               Identificação do funcionário
             </p>
-
           </div>
 
           <div
             style={{
-              marginBottom:
-                '20px',
-
-              padding:
-                '14px 16px',
-
-              border:
-                '1px solid #383838',
-
+              marginBottom: '20px',
+              padding: '14px 16px',
+              border: '1px solid #383838',
               borderLeft:
                 '4px solid #d71920',
-
-              borderRadius:
-                '10px',
-
-              background:
-                '#151515',
-
-              color:
-                '#dddddd',
-
-              fontSize:
-                '14px',
-
-              lineHeight:
-                1.5,
+              borderRadius: '10px',
+              background: '#151515',
+              color: '#dddddd',
+              fontSize: '14px',
+              lineHeight: 1.5,
             }}
           >
-
-            Digite seu código para que o
-            sistema saiba quem realizou
-            cada entrada.
-
+            Digite seu código para acessar
+            as entradas e as Ordens de
+            Serviço atribuídas a você.
           </div>
 
-          <div
-            className="form-group"
-          >
-
-            <label
-              htmlFor="codigoFuncionario"
-            >
+          <div className="form-group">
+            <label htmlFor="codigoFuncionario">
               ID DO FUNCIONÁRIO
             </label>
 
@@ -2018,41 +2102,26 @@ function App() {
               value={
                 codigoFuncionario
               }
-              onChange={(
-                event
-              ) => {
-
+              onChange={event => {
                 const valor =
                   event.target.value
-                    .replace(
-                      /\D/g,
-                      ''
-                    )
-                    .slice(
-                      0,
-                      3
-                    );
+                    .replace(/\D/g, '')
+                    .slice(0, 3)
 
                 setCodigoFuncionario(
-                  valor
-                );
+                  valor,
+                )
 
-                setErroFuncionario(
-                  ''
-                );
+                setErroFuncionario('')
               }}
-              onKeyDown={(
-                event
-              ) => {
-
+              onKeyDown={event => {
                 if (
                   event.key ===
                   'Enter'
                 ) {
+                  event.preventDefault()
 
-                  event.preventDefault();
-
-                  void entrarComoFuncionario();
+                  void entrarComoFuncionario()
                 }
               }}
               placeholder="Ex.: 005"
@@ -2063,21 +2132,17 @@ function App() {
               Use o código de 3 números
               fornecido pela empresa.
             </small>
-
           </div>
 
           {erroFuncionario && (
-
             <div
               className="login-error"
               style={{
-                marginBottom:
-                  '14px',
+                marginBottom: '14px',
               }}
             >
               {erroFuncionario}
             </div>
-
           )}
 
           <button
@@ -2090,1673 +2155,2102 @@ function App() {
               buscandoFuncionario
             }
           >
-
-            {
-              buscandoFuncionario
-                ? 'IDENTIFICANDO...'
-                : 'ENTRAR'
-            }
-
+            {buscandoFuncionario
+              ? 'IDENTIFICANDO...'
+              : 'ENTRAR'}
           </button>
-
-          <div
-            style={{
-              marginTop:
-                '20px',
-
-              paddingTop:
-                '15px',
-
-              borderTop:
-                '1px solid #333',
-
-              color:
-                '#777',
-
-              fontSize:
-                '11px',
-
-              lineHeight:
-                1.5,
-
-              textAlign:
-                'center',
-            }}
-          >
-
-            O funcionário ficará identificado
-            neste celular até escolher
-            <strong>
-              {' '}TROCAR
-            </strong>.
-
-          </div>
-
         </section>
-
       </main>
-    );
+    )
   }
 
-  // =========================================================
-  // INTERFACE PRINCIPAL
-  // =========================================================
-
   return (
-    <main className="app">
+    <>
+      <style>
+        {`
+          html,
+          body,
+          #root {
+            width: 100%;
+            max-width: 100%;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden !important;
+          }
 
-      {/* ======================================
-          CABEÇALHO
-      ====================================== */}
+          *,
+          *::before,
+          *::after {
+            box-sizing: border-box;
+          }
 
-      <header className="header">
+          .mastertec-os-servicos {
+            width: 100%;
+            max-width: 100%;
+            overflow: hidden;
+          }
 
-        <div
-          style={{
-            display:
-              'flex',
+          .mastertec-os-cabecalho {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 80px 120px;
+            gap: 8px;
+            width: 100%;
+            max-width: 100%;
+          }
 
-            alignItems:
-              'center',
+          .mastertec-os-linha {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 80px 120px;
+            gap: 8px;
+            width: 100%;
+            max-width: 100%;
+          }
 
-            justifyContent:
-              'space-between',
+          .mastertec-os-linha input {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+          }
 
-            gap:
-              '12px',
+          .mastertec-label-mobile {
+            display: none;
+          }
 
-            flexWrap:
-              'wrap',
-          }}
-        >
+          .mastertec-info-compacta-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 7px 14px;
+            width: 100%;
+            max-width: 100%;
+          }
 
-          <div>
+          @media (max-width: 600px) {
+            .mastertec-os-cabecalho {
+              grid-template-columns: minmax(0, 1fr) 70px 100px;
+              gap: 6px;
+            }
 
-            <div className="logo">
-              DIESEL<span>CENTER</span>
-            </div>
+            .mastertec-os-linha {
+              grid-template-columns: minmax(0, 1fr) 70px 100px;
+              gap: 6px;
+            }
 
-            <div className="subtitle">
-              Controle de Oficina
-            </div>
+            .mastertec-info-compacta-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 6px 10px;
+            }
+          }
 
-          </div>
+          @media (max-width: 430px) {
+            .mastertec-os-cabecalho {
+              grid-template-columns: minmax(0, 1fr) 66px 94px;
+              gap: 5px;
+            }
 
-          {/* ==================================
-              FUNCIONÁRIO
-          ================================== */}
+            .mastertec-os-linha {
+              grid-template-columns: minmax(0, 1fr) 66px 94px;
+              gap: 5px;
+            }
 
+            .mastertec-info-compacta-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 6px 8px;
+            }
+          }
+
+          @media (max-width: 380px) {
+            .mastertec-os-cabecalho {
+              display: none;
+            }
+
+            .mastertec-os-linha {
+              display: grid;
+              grid-template-columns: minmax(0, 1fr) minmax(75px, 90px);
+              gap: 8px;
+              padding: 10px;
+              border: 1px solid #333;
+              border-radius: 10px;
+              background: #101010;
+              width: 100%;
+              max-width: 100%;
+            }
+
+            .mastertec-os-linha input:first-child {
+              grid-column: 1 / -1;
+              width: 100%;
+            }
+
+            .mastertec-os-total-linha {
+              display: block;
+              grid-column: 1 / -1;
+            }
+
+            .mastertec-label-mobile {
+              display: block;
+              color: #777;
+              font-size: 9px;
+              font-weight: 800;
+              margin-bottom: 4px;
+            }
+
+            .mastertec-mobile-field {
+              min-width: 0;
+            }
+
+            .mastertec-info-compacta-grid {
+              grid-template-columns: minmax(0, 1fr);
+              gap: 6px;
+            }
+          }
+        `}
+      </style>
+
+      <main className="app">
+        <header className="header">
           <div
             style={{
-              display:
-                'flex',
-
-              alignItems:
-                'center',
-
-              gap:
-                '8px',
-
-              padding:
-                '8px 10px',
-
-              border:
-                '1px solid #3b3b3b',
-
-              borderRadius:
-                '10px',
-
-              background:
-                '#151515',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent:
+                'space-between',
+              gap: '12px',
+              flexWrap: 'wrap',
+              width: '100%',
+              maxWidth: '100%',
             }}
           >
+            <div
+              style={{
+                minWidth: 0,
+              }}
+            >
+              <div className="logo">
+                DIESEL
+                <span>CENTER</span>
+              </div>
+
+              <div className="subtitle">
+                Controle de Oficina
+              </div>
+            </div>
 
             <div
               style={{
-                color:
-                  '#ffffff',
-
-                fontSize:
-                  '13px',
-
-                fontWeight:
-                  800,
-              }}
-            >
-              👤 {funcionario.nome}
-            </div>
-
-            <button
-              type="button"
-              onClick={
-                trocarFuncionario
-              }
-              disabled={
-                enviando
-              }
-              style={{
+                display: 'flex',
+                alignItems:
+                  'center',
+                gap: '8px',
                 padding:
-                  '6px 8px',
-
+                  '8px 10px',
                 border:
-                  '1px solid #555',
-
+                  '1px solid #3b3b3b',
                 borderRadius:
-                  '7px',
-
-                background:
-                  '#222',
-
-                color:
-                  '#ffffff',
-
-                fontSize:
                   '10px',
-
-                fontWeight:
-                  800,
-
-                cursor:
-                  enviando
-                    ? 'not-allowed'
-                    : 'pointer',
+                background:
+                  '#151515',
+                maxWidth: '100%',
               }}
             >
-              TROCAR
-            </button>
+              <div
+                style={{
+                  color: '#fff',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  overflow: 'hidden',
+                  textOverflow:
+                    'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                👤 {funcionario.nome}
+              </div>
 
+              <button
+                type="button"
+                onClick={
+                  trocarFuncionario
+                }
+                disabled={enviando}
+                style={{
+                  padding: '6px 8px',
+                  border:
+                    '1px solid #555',
+                  borderRadius: '7px',
+                  background:
+                    '#222',
+                  color: '#fff',
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                TROCAR
+              </button>
+            </div>
           </div>
-
-        </div>
-
-      </header>
-
-      {/* ======================================
-          CARD
-      ====================================== */}
-
-      <section className="card">
-
-        <h1>
-          Registro de Entrada
-        </h1>
-
-        <p className="description">
-
-          Funcionário responsável:{' '}
-
-          <strong
-            style={{
-              color:
-                '#ffffff',
-            }}
-          >
-            {funcionario.nome}
-          </strong>
-
-        </p>
-
-        {/* ====================================
-            TIPO DE ENTRADA
-        ==================================== */}
-
-        <div className="entry-type">
-
-          <label className="entry-type-title">
-            O que está entrando?
-          </label>
-
-          <div className="entry-type-options">
-
-            <button
-              type="button"
-              className={
-                tipoEntrada === 'veiculo'
-                  ? 'entry-type-button active'
-                  : 'entry-type-button'
-              }
-              onClick={() =>
-                trocarTipoEntrada(
-                  'veiculo'
-                )
-              }
-              disabled={
-                enviando
-              }
-            >
-
-              <span className="entry-icon">
-                🚗
-              </span>
-
-              <span>
-                Veículo
-              </span>
-
-              <small>
-                Caminhão, pickup etc.
-              </small>
-
-            </button>
-
-            <button
-              type="button"
-              className={
-                tipoEntrada === 'peca'
-                  ? 'entry-type-button active'
-                  : 'entry-type-button'
-              }
-              onClick={() =>
-                trocarTipoEntrada(
-                  'peca'
-                )
-              }
-              disabled={
-                enviando
-              }
-            >
-
-              <span className="entry-icon">
-                🔧
-              </span>
-
-              <span>
-                Peça avulsa
-              </span>
-
-              <small>
-                Bomba, bico, turbina etc.
-              </small>
-
-            </button>
-
-          </div>
-
-        </div>
-
-        {/* ====================================
-            INPUT FOTO 1
-        ==================================== */}
-
-        <input
-          ref={cameraInput1Ref}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={
-            selecionarFoto1
-          }
-          hidden
-        />
-
-        {/* ====================================
-            INPUT FOTO 2
-        ==================================== */}
-
-        <input
-          ref={cameraInput2Ref}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          onChange={
-            selecionarFoto2
-          }
-          hidden
-        />
-
-        {/* ====================================
-            FOTOS DO VEÍCULO
-        ==================================== */}
-
-        {tipoEntrada === 'veiculo' && (
 
           <div
             style={{
-              display:
-                'grid',
-
-              gap:
-                '14px',
+              display: 'grid',
+              gridTemplateColumns:
+                '1fr 1fr',
+              gap: '10px',
+              marginTop: '16px',
+              width: '100%',
+              maxWidth: '100%',
             }}
           >
-
-            {/* FOTO 1 */}
+            <button
+              type="button"
+              onClick={() =>
+                setTelaPrincipal(
+                  'entrada',
+                )
+              }
+              style={{
+                width: '100%',
+                minWidth: 0,
+                padding: '12px 8px',
+                border:
+                  telaPrincipal ===
+                  'entrada'
+                    ? '2px solid #d71920'
+                    : '1px solid #444',
+                borderRadius: '10px',
+                background:
+                  telaPrincipal ===
+                  'entrada'
+                    ? 'rgba(215,25,32,0.16)'
+                    : '#181818',
+                color: '#fff',
+                fontWeight: 900,
+                cursor: 'pointer',
+              }}
+            >
+              🚚 NOVA ENTRADA
+            </button>
 
             <button
               type="button"
-              className="camera-area camera-clickable"
-              onClick={
-                abrirCamera1
+              onClick={() =>
+                setTelaPrincipal(
+                  'ordens',
+                )
               }
-              disabled={
-                enviando
-              }
-              aria-label={
-                foto1
-                  ? 'Tirar outra foto da frente'
-                  : 'Tirar foto da frente'
-              }
+              style={{
+                width: '100%',
+                minWidth: 0,
+                padding: '12px 8px',
+                border:
+                  telaPrincipal ===
+                  'ordens'
+                    ? '2px solid #2563eb'
+                    : '1px solid #444',
+                borderRadius: '10px',
+                background:
+                  telaPrincipal ===
+                  'ordens'
+                    ? 'rgba(37,99,235,0.16)'
+                    : '#181818',
+                color: '#fff',
+                fontWeight: 900,
+                cursor: 'pointer',
+              }}
             >
-
-              {foto1 ? (
-
-                <img
-                  src={foto1}
-                  alt="Frente do veículo"
-                  className="plate-photo"
-                />
-
-              ) : (
-
-                <div className="camera-placeholder">
-
-                  <span className="camera-icon">
-                    📷
-                  </span>
-
-                  <strong>
-                    FOTO 1 — FRENTE / PLACA
-                  </strong>
-
-                  <small>
-                    Fotografe a frente do veículo
-                    mostrando bem a placa.
-                  </small>
-
-                </div>
-
-              )}
-
-              {foto1 && (
-
-                <div className="camera-overlay">
-                  📷 Toque para tirar outra
-                </div>
-
-              )}
-
+              🛠️ MINHAS O.S.
             </button>
-
-            {/* FOTO 2 */}
-
-            <button
-              type="button"
-              className="camera-area camera-clickable"
-              onClick={
-                abrirCamera2
-              }
-              disabled={
-                enviando
-              }
-              aria-label={
-                foto2
-                  ? 'Tirar outra foto da lateral'
-                  : 'Tirar foto da lateral'
-              }
-            >
-
-              {foto2 ? (
-
-                <img
-                  src={foto2}
-                  alt="Lateral do veículo"
-                  className="plate-photo"
-                />
-
-              ) : (
-
-                <div className="camera-placeholder">
-
-                  <span className="camera-icon">
-                    📷
-                  </span>
-
-                  <strong>
-                    FOTO 2 — LATERAL / MODELO
-                  </strong>
-
-                  <small>
-                    Fotografe a lateral do veículo
-                    mostrando o modelo.
-                  </small>
-
-                </div>
-
-              )}
-
-              {foto2 && (
-
-                <div className="camera-overlay">
-                  📷 Toque para tirar outra
-                </div>
-
-              )}
-
-            </button>
-
           </div>
-        )}
+        </header>
 
-        {/* ====================================
-            FOTO DA PEÇA
-        ==================================== */}
-
-        {tipoEntrada === 'peca' && (
-
-          <button
-            type="button"
-            className="camera-area camera-clickable"
-            onClick={
-              abrirCamera1
-            }
-            disabled={
-              enviando
-            }
-            aria-label={
-              foto1
-                ? 'Tirar outra foto da peça'
-                : 'Tirar foto da peça'
-            }
+        {telaPrincipal ===
+          'ordens' && (
+          <section
+            className="card"
+            style={{
+              maxWidth: '700px',
+              width: '100%',
+              overflow: 'hidden',
+            }}
           >
+            {!ordemAberta ? (
+              <>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems:
+                      'center',
+                    justifyContent:
+                      'space-between',
+                    gap: '12px',
+                    flexWrap: 'wrap',
+                    marginBottom:
+                      '18px',
+                  }}
+                >
+                  <div
+                    style={{
+                      minWidth: 0,
+                    }}
+                  >
+                    <h1
+                      style={{
+                        margin: 0,
+                      }}
+                    >
+                      Minhas O.S.
+                    </h1>
 
-            {foto1 ? (
+                    <p
+                      className="description"
+                      style={{
+                        marginBottom: 0,
+                      }}
+                    >
+                      O.S. atribuídas a{' '}
+                      <strong
+                        style={{
+                          color: '#fff',
+                        }}
+                      >
+                        {funcionario.nome}
+                      </strong>
+                    </p>
+                  </div>
 
-              <img
-                src={foto1}
-                alt="Foto da peça"
-                className="plate-photo"
-              />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void carregarMinhasOrdens()
+                    }
+                    disabled={
+                      carregandoOrdens
+                    }
+                    style={{
+                      padding:
+                        '10px 14px',
+                      border:
+                        '1px solid #444',
+                      borderRadius:
+                        '9px',
+                      background:
+                        '#202020',
+                      color: '#fff',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      flexShrink: 0,
+                    }}
+                  >
+                    {carregandoOrdens
+                      ? 'Atualizando...'
+                      : '↻ Atualizar'}
+                  </button>
+                </div>
 
+                {erroOrdens && (
+                  <div
+                    style={{
+                      padding: '12px',
+                      marginBottom: '15px',
+                      border:
+                        '1px solid #7f1d1d',
+                      borderRadius:
+                        '9px',
+                      background:
+                        '#2a1010',
+                      color:
+                        '#ff7b7b',
+                      fontSize: '13px',
+                    }}
+                  >
+                    {erroOrdens}
+                  </div>
+                )}
+
+                {carregandoOrdens ? (
+                  <div
+                    style={{
+                      padding:
+                        '50px 20px',
+                      textAlign:
+                        'center',
+                      color: '#999',
+                    }}
+                  >
+                    Carregando suas O.S....
+                  </div>
+                ) : minhasOrdens.length ===
+                  0 ? (
+                  <div
+                    style={{
+                      padding:
+                        '45px 20px',
+                      textAlign:
+                        'center',
+                      border:
+                        '1px dashed #444',
+                      borderRadius:
+                        '12px',
+                      background:
+                        '#111',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize:
+                          '42px',
+                      }}
+                    >
+                      🛠️
+                    </div>
+
+                    <h3
+                      style={{
+                        color: '#fff',
+                        marginBottom:
+                          '6px',
+                      }}
+                    >
+                      Nenhuma O.S. atribuída
+                    </h3>
+
+                    <p
+                      style={{
+                        color: '#888',
+                        margin: 0,
+                      }}
+                    >
+                      Quando uma O.S. for
+                      atribuída a você, ela
+                      aparecerá aqui.
+                    </p>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display:
+                        'grid',
+                      gap: '10px',
+                      width: '100%',
+                    }}
+                  >
+                    {minhasOrdens.map(
+                      ordem => {
+                        const encerrada =
+                          statusOSFechada(
+                            ordem.status,
+                          )
+
+                        return (
+                          <button
+                            key={
+                              ordem.id
+                            }
+                            type="button"
+                            onClick={() =>
+                              void abrirMinhaOS(
+                                ordem,
+                              )
+                            }
+                            style={{
+                              width: '100%',
+                              minWidth: 0,
+                              padding:
+                                '16px',
+                              textAlign:
+                                'left',
+                              border:
+                                encerrada
+                                  ? '1px solid #355534'
+                                  : '1px solid #363636',
+                              borderRadius:
+                                '10px',
+                              background:
+                                '#121212',
+                              color: '#fff',
+                              cursor:
+                                'pointer',
+                              overflow:
+                                'hidden',
+                            }}
+                          >
+                            <div
+                              style={{
+                                display:
+                                  'flex',
+                                alignItems:
+                                  'center',
+                                justifyContent:
+                                  'space-between',
+                                gap: '10px',
+                              }}
+                            >
+                              <strong
+                                style={{
+                                  fontSize:
+                                    '17px',
+                                }}
+                              >
+                                {ordem.numero
+                                  ? `O.S. #${ordem.numero}`
+                                  : 'O.S.'}
+                              </strong>
+
+                              <span
+                                style={{
+                                  fontSize:
+                                    '10px',
+                                  fontWeight:
+                                    900,
+                                  padding:
+                                    '5px 8px',
+                                  borderRadius:
+                                    '999px',
+                                  background:
+                                    encerrada
+                                      ? '#16351a'
+                                      : '#292929',
+                                  color:
+                                    encerrada
+                                      ? '#70d77c'
+                                      : '#aaa',
+                                  whiteSpace:
+                                    'nowrap',
+                                  flexShrink:
+                                    0,
+                                }}
+                              >
+                                {encerrada
+                                  ? 'ENCERRADA'
+                                  : 'EM ANDAMENTO'}
+                              </span>
+                            </div>
+
+                            <div
+                              style={{
+                                marginTop:
+                                  '6px',
+                                color:
+                                  '#aaa',
+                                overflowWrap:
+                                  'anywhere',
+                              }}
+                            >
+                              {ordem.titulo}
+                            </div>
+
+                            {encerrada && (
+                              <div
+                                style={{
+                                  marginTop:
+                                    '7px',
+                                  color:
+                                    '#70d77c',
+                                  fontSize:
+                                    '11px',
+                                  fontWeight:
+                                    700,
+                                }}
+                              >
+                                Toque para
+                                visualizar o
+                                histórico.
+                              </div>
+                            )}
+                          </button>
+                        )
+                      },
+                    )}
+                  </div>
+                )}
+              </>
             ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOrdemAberta(null)
+                    setEntradaDaOrdem(
+                      null,
+                    )
+                    setTarefasOriginais(
+                      [],
+                    )
+                  }}
+                  style={{
+                    marginBottom:
+                      '16px',
+                    border: 'none',
+                    background:
+                      'transparent',
+                    color: '#60a5fa',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    padding: 0,
+                  }}
+                >
+                  ← Voltar para minhas O.S.
+                </button>
 
-              <div className="camera-placeholder">
+                {carregandoDetalhesOS ? (
+                  <div
+                    style={{
+                      padding:
+                        '50px 20px',
+                      textAlign:
+                        'center',
+                      color: '#999',
+                    }}
+                  >
+                    Carregando O.S....
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        width: '100%',
+                        maxWidth:
+                          '100%',
+                        padding: '14px',
+                        border:
+                          '1px solid #383838',
+                        borderRadius:
+                          '12px',
+                        background:
+                          '#111',
+                        marginBottom:
+                          '16px',
+                        overflow:
+                          'hidden',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display:
+                            'flex',
+                          alignItems:
+                            'center',
+                          justifyContent:
+                            'space-between',
+                          gap: '10px',
+                          flexWrap:
+                            'wrap',
+                        }}
+                      >
+                        <div
+                          style={{
+                            minWidth: 0,
+                          }}
+                        >
+                          <div
+                            style={{
+                              color:
+                                '#888',
+                              fontSize:
+                                '10px',
+                              fontWeight:
+                                800,
+                            }}
+                          >
+                            ORDEM DE SERVIÇO
+                          </div>
 
-                <span className="camera-icon">
-                  📷
-                </span>
+                          <h2
+                            style={{
+                              margin:
+                                '4px 0 0',
+                              color:
+                                '#fff',
+                              overflowWrap:
+                                'anywhere',
+                            }}
+                          >
+                            {ordemAberta.numero
+                              ? `O.S. #${ordemAberta.numero}`
+                              : 'O.S.'}
+                          </h2>
+                        </div>
 
-                <strong>
-                  Toque aqui para tirar a foto
-                </strong>
+                        {statusOSFechada(
+                          ordemAberta.status,
+                        ) && (
+                          <div
+                            style={{
+                              padding:
+                                '7px 10px',
+                              border:
+                                '1px solid #315f36',
+                              borderRadius:
+                                '999px',
+                              background:
+                                '#153519',
+                              color:
+                                '#72dc7d',
+                              fontSize:
+                                '10px',
+                              fontWeight:
+                                900,
+                              whiteSpace:
+                                'nowrap',
+                            }}
+                          >
+                            ✅ O.S. ENCERRADA
+                          </div>
+                        )}
+                      </div>
 
-                <small>
-                  Fotografe a peça
-                </small>
+                      {/* CABEÇALHO COMPACTO */}
 
-              </div>
+                      <div
+                        className="mastertec-info-compacta-grid"
+                        style={{
+                          marginTop:
+                            '12px',
+                          padding:
+                            '10px',
+                          border:
+                            '1px solid #303030',
+                          borderRadius:
+                            '9px',
+                          background:
+                            '#101010',
+                        }}
+                      >
+                        <InfoCompacta
+                          label="CLIENTE"
+                          valor={
+                            entradaDaOrdem?.cliente_nome ||
+                            ''
+                          }
+                        />
 
+                        <InfoCompacta
+                          label="TELEFONE"
+                          valor={
+                            entradaDaOrdem?.telefone ||
+                            ''
+                          }
+                        />
+
+                        <InfoCompacta
+                          label="VEÍCULO"
+                          valor={
+                            entradaDaOrdem?.modelo ||
+                            ''
+                          }
+                        />
+
+                        <InfoCompacta
+                          label="PLACA"
+                          valor={
+                            entradaDaOrdem?.placa ||
+                            ''
+                          }
+                        />
+
+                        <InfoCompacta
+                          label="ANO"
+                          valor={
+                            entradaDaOrdem?.ano
+                              ? String(
+                                  entradaDaOrdem.ano,
+                                )
+                              : ''
+                          }
+                        />
+
+                        <InfoCompacta
+                          label="FROTA"
+                          valor={
+                            entradaDaOrdem?.frota ||
+                            ''
+                          }
+                        />
+
+                        <div
+                          style={{
+                            gridColumn:
+                              '1 / -1',
+                          }}
+                        >
+                          <InfoCompacta
+                            label="OBSERVAÇÃO"
+                            valor={
+                              entradaDaOrdem?.observacao ||
+                              ''
+                            }
+                          />
+                        </div>
+
+                        <div
+                          style={{
+                            gridColumn:
+                              '1 / -1',
+                          }}
+                        >
+                          <InfoCompacta
+                            label="ENTRADA"
+                            valor={formatarDataHora(
+                              entradaDaOrdem?.criado_em ||
+                                ordemAberta.data_entrada,
+                            )}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {!osEditavel && (
+                      <div
+                        style={{
+                          marginBottom:
+                            '16px',
+                          padding:
+                            '14px',
+                          border:
+                            '1px solid #315f36',
+                          borderRadius:
+                            '10px',
+                          background:
+                            '#122616',
+                          color:
+                            '#bcebc1',
+                          fontSize:
+                            '13px',
+                          lineHeight:
+                            1.5,
+                        }}
+                      >
+                        <strong>
+                          O.S. encerrada.
+                        </strong>
+                        <br />
+                        Esta tela está em modo
+                        somente visualização.
+                        Para fazer alterações,
+                        a O.S. precisa ser reaberta
+                        pelo painel.
+                      </div>
+                    )}
+
+                    <div
+                      className="mastertec-os-servicos"
+                      style={{
+                        padding:
+                          '18px',
+                        border:
+                          '1px solid #383838',
+                        borderRadius:
+                          '12px',
+                        background:
+                          '#151515',
+                      }}
+                    >
+                      <h3
+                        style={{
+                          margin:
+                            '0 0 15px',
+                          color:
+                            '#fff',
+                        }}
+                      >
+                        DESCRIÇÃO DE SERVIÇOS E PEÇAS
+                      </h3>
+
+                      <div className="mastertec-os-cabecalho">
+                        <div
+                          style={{
+                            color:
+                              '#777',
+                            fontSize:
+                              '10px',
+                            fontWeight:
+                              800,
+                          }}
+                        >
+                          DESCRIÇÃO
+                        </div>
+
+                        <div
+                          style={{
+                            color:
+                              '#777',
+                            fontSize:
+                              '10px',
+                            fontWeight:
+                              800,
+                            textAlign:
+                              'center',
+                          }}
+                        >
+                          QTD.
+                        </div>
+
+                        <div
+                          style={{
+                            color:
+                              '#777',
+                            fontSize:
+                              '10px',
+                            fontWeight:
+                              800,
+                            textAlign:
+                              'right',
+                          }}
+                        >
+                          PREÇO
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          display:
+                            'grid',
+                          gap: '8px',
+                          marginTop:
+                            '6px',
+                          width: '100%',
+                          maxWidth:
+                            '100%',
+                        }}
+                      >
+                        {linhasServico.map(
+                          (
+                            linha,
+                            index,
+                          ) => {
+                            const quantidade =
+                              converterNumero(
+                                linha.quantidade,
+                              ) || 1
+
+                            const valor =
+                              converterNumero(
+                                linha.valor,
+                              )
+
+                            const totalLinha =
+                              quantidade *
+                              valor
+
+                            return (
+                              <div
+                                key={
+                                  linha.id ||
+                                  `linha-${index}`
+                                }
+                                className="mastertec-os-linha"
+                              >
+                                <input
+                                  type="text"
+                                  value={
+                                    linha.descricao
+                                  }
+                                  onChange={event =>
+                                    atualizarLinhaServico(
+                                      index,
+                                      'descricao',
+                                      event.target
+                                        .value,
+                                    )
+                                  }
+                                  placeholder={
+                                    osEditavel
+                                      ? 'Descrição do serviço ou peça'
+                                      : '-'
+                                  }
+                                  disabled={
+                                    !osEditavel ||
+                                    finalizandoOS
+                                  }
+                                  autoCorrect="off"
+                                  spellCheck={
+                                    false
+                                  }
+                                  autoCapitalize="sentences"
+                                  style={{
+                                    minWidth:
+                                      0,
+                                    width:
+                                      '100%',
+                                    maxWidth:
+                                      '100%',
+                                  }}
+                                />
+
+                                <div
+                                  className="mastertec-mobile-field"
+                                  style={{
+                                    minWidth:
+                                      0,
+                                  }}
+                                >
+                                  <div className="mastertec-label-mobile">
+                                    QUANTIDADE
+                                  </div>
+
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={
+                                      linha.quantidade
+                                    }
+                                    onChange={event =>
+                                      atualizarLinhaServico(
+                                        index,
+                                        'quantidade',
+                                        event.target
+                                          .value,
+                                      )
+                                    }
+                                    placeholder="1"
+                                    disabled={
+                                      !osEditavel ||
+                                      finalizandoOS
+                                    }
+                                    style={{
+                                      width:
+                                        '100%',
+                                      maxWidth:
+                                        '100%',
+                                      minWidth:
+                                        0,
+                                      textAlign:
+                                        'center',
+                                    }}
+                                  />
+                                </div>
+
+                                <div
+                                  className="mastertec-mobile-field"
+                                  style={{
+                                    minWidth:
+                                      0,
+                                  }}
+                                >
+                                  <div className="mastertec-label-mobile">
+                                    PREÇO
+                                  </div>
+
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={
+                                      linha.valor
+                                    }
+                                    onChange={event =>
+                                      atualizarLinhaServico(
+                                        index,
+                                        'valor',
+                                        event.target
+                                          .value,
+                                      )
+                                    }
+                                    placeholder="R$ 0,00"
+                                    disabled={
+                                      !osEditavel ||
+                                      finalizandoOS
+                                    }
+                                    style={{
+                                      width:
+                                        '100%',
+                                      maxWidth:
+                                        '100%',
+                                      minWidth:
+                                        0,
+                                      textAlign:
+                                        'right',
+                                    }}
+                                  />
+                                </div>
+
+                                <div
+                                  className="mastertec-os-total-linha"
+                                  style={{
+                                    color:
+                                      '#999',
+                                    fontSize:
+                                      '11px',
+                                    fontWeight:
+                                      700,
+                                    textAlign:
+                                      'right',
+                                  }}
+                                >
+                                  Total da linha:{' '}
+                                  {formatarMoedaNumero(
+                                    totalLinha,
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          },
+                        )}
+                      </div>
+
+                      {osEditavel && (
+                        <button
+                          type="button"
+                          onClick={
+                            adicionarLinhaServico
+                          }
+                          disabled={
+                            finalizandoOS
+                          }
+                          style={{
+                            width:
+                              '100%',
+                            maxWidth:
+                              '100%',
+                            marginTop:
+                              '12px',
+                            padding:
+                              '12px',
+                            border:
+                              '1px dashed #555',
+                            borderRadius:
+                              '8px',
+                            background:
+                              '#181818',
+                            color:
+                              '#fff',
+                            fontWeight:
+                              800,
+                            cursor:
+                              'pointer',
+                          }}
+                        >
+                          + ADICIONAR LINHA
+                        </button>
+                      )}
+
+                      <div
+                        style={{
+                          marginTop:
+                            '18px',
+                          paddingTop:
+                            '15px',
+                          borderTop:
+                            '1px solid #333',
+                          display:
+                            'flex',
+                          justifyContent:
+                            'flex-end',
+                          width:
+                            '100%',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width:
+                              '100%',
+                            maxWidth:
+                              '260px',
+                            color:
+                              '#fff',
+                            textAlign:
+                              'right',
+                          }}
+                        >
+                          <div
+                            style={{
+                              color:
+                                '#777',
+                              fontSize:
+                                '10px',
+                              fontWeight:
+                                800,
+                              marginBottom:
+                                '4px',
+                            }}
+                          >
+                            TOTAL DA O.S.
+                          </div>
+
+                          <div
+                            style={{
+                              fontSize:
+                                '21px',
+                              fontWeight:
+                                900,
+                              whiteSpace:
+                                'nowrap',
+                            }}
+                          >
+                            {osEditavel
+                              ? formatarMoedaNumero(
+                                  totalOrdemAberta,
+                                )
+                              : formatarMoeda(
+                                  ordemAberta.valor_total ??
+                                    totalOrdemAberta,
+                                )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {osEditavel && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void finalizarEnviarOS()
+                          }
+                          disabled={
+                            finalizandoOS
+                          }
+                          style={{
+                            width:
+                              '100%',
+                            maxWidth:
+                              '100%',
+                            marginTop:
+                              '18px',
+                            padding:
+                              '16px',
+                            border:
+                              'none',
+                            borderRadius:
+                              '10px',
+                            background:
+                              '#16a34a',
+                            color:
+                              '#fff',
+                            fontWeight:
+                              900,
+                            fontSize:
+                              '16px',
+                            cursor:
+                              'pointer',
+                          }}
+                        >
+                          {finalizandoOS
+                            ? 'ENVIANDO...'
+                            : 'FINALIZAR E ENVIAR'}
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </>
             )}
-
-            {foto1 && (
-
-              <div className="camera-overlay">
-                📷 Toque para tirar outra foto
-              </div>
-
-            )}
-
-          </button>
+          </section>
         )}
 
-        {/* ====================================
-            CAMPOS DO VEÍCULO
-        ==================================== */}
+        {telaPrincipal ===
+          'entrada' && (
+          <section className="card">
+            <h1>
+              Registro de Entrada
+            </h1>
 
-        {tipoEntrada === 'veiculo' && (
+            <p className="description">
+              Funcionário responsável:{' '}
+              <strong
+                style={{
+                  color: '#fff',
+                }}
+              >
+                {funcionario.nome}
+              </strong>
+            </p>
 
-          <>
-
-            <div className="form-group">
-
-              <label htmlFor="placa">
-                PLACA *
+            <div className="entry-type">
+              <label className="entry-type-title">
+                O que está entrando?
               </label>
 
-              <input
-                id="placa"
-                type="text"
-                value={
-                  placa
-                }
-                onChange={(e) =>
-                  alterarPlaca(
-                    e.target.value
-                  )
-                }
-                placeholder="ABC1D23"
-                maxLength={7}
-                disabled={
-                  enviando
-                }
-              />
+              <div className="entry-type-options">
+                <button
+                  type="button"
+                  className={
+                    tipoEntrada ===
+                    'veiculo'
+                      ? 'entry-type-button active'
+                      : 'entry-type-button'
+                  }
+                  onClick={() =>
+                    trocarTipoEntrada(
+                      'veiculo',
+                    )
+                  }
+                  disabled={enviando}
+                >
+                  <span className="entry-icon">
+                    🚗
+                  </span>
 
-              <small>
-                {consultandoPlaca
-                  ? '🔎 Procurando veículo no cadastro...'
-                  : 'Digite a placa completa para verificar se o veículo já está cadastrado.'}
-              </small>
+                  <span>Veículo</span>
 
+                  <small>
+                    Caminhão, pickup etc.
+                  </small>
+                </button>
+
+                <button
+                  type="button"
+                  className={
+                    tipoEntrada ===
+                    'peca'
+                      ? 'entry-type-button active'
+                      : 'entry-type-button'
+                  }
+                  onClick={() =>
+                    trocarTipoEntrada(
+                      'peca',
+                    )
+                  }
+                  disabled={enviando}
+                >
+                  <span className="entry-icon">
+                    🔧
+                  </span>
+
+                  <span>Peça avulsa</span>
+
+                  <small>
+                    Bomba, bico, turbina etc.
+                  </small>
+                </button>
+              </div>
             </div>
 
-            <div className="form-group">
+            <input
+              ref={cameraInput1Ref}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={selecionarFoto1}
+              hidden
+            />
 
-              <label htmlFor="modelo">
-                MODELO *
-              </label>
+            <input
+              ref={cameraInput2Ref}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={selecionarFoto2}
+              hidden
+            />
 
-              <input
-                id="modelo"
-                type="text"
-                value={
-                  modelo
-                }
-                onChange={(e) =>
-                  setModelo(
-                    e.target.value
-                  )
-                }
-                placeholder="Modelo do veículo"
-                disabled={
-                  enviando
-                }
-              />
-
-            </div>
-
-            <div className="form-group">
-
-              <label htmlFor="frota">
-                FROTA
-              </label>
-
-              <input
-                id="frota"
-                type="text"
-                value={
-                  frota
-                }
-                onChange={(e) =>
-                  setFrota(
-                    e.target.value
-                  )
-                }
-                placeholder="Número da frota, se houver"
-                disabled={
-                  enviando
-                }
-              />
-
-              <small>
-                Preencha somente se o veículo possuir número de frota.
-              </small>
-
-            </div>
-
-          </>
-        )}
-
-        {/* ====================================
-            CAMPOS DA PEÇA
-        ==================================== */}
-
-        {tipoEntrada === 'peca' && (
-
-          <>
-
-            <div className="divider">
-
-              <span>
-                Dados da peça
-              </span>
-
-            </div>
-
-            {/* TIPOS DE PEÇA */}
-
-            <div className="form-group">
-
-              <label>
-                QUAIS PEÇAS ESTÃO ENTRANDO? *
-              </label>
-
-              <small>
-                Você pode selecionar mais de uma.
-              </small>
-
+            {tipoEntrada ===
+              'veiculo' && (
               <div
                 style={{
                   display:
                     'grid',
-
-                  gridTemplateColumns:
-                    'repeat(2, minmax(0, 1fr))',
-
-                  gap:
-                    '10px',
-
-                  marginTop:
-                    '10px',
+                  gap: '14px',
+                  width: '100%',
+                  maxWidth: '100%',
                 }}
               >
+                <button
+                  type="button"
+                  className="camera-area camera-clickable"
+                  onClick={abrirCamera1}
+                  disabled={enviando}
+                >
+                  {foto1 ? (
+                    <img
+                      src={foto1}
+                      alt="Frente do veículo"
+                      className="plate-photo"
+                    />
+                  ) : (
+                    <div className="camera-placeholder">
+                      <span className="camera-icon">
+                        📷
+                      </span>
 
-                {(
-                  [
-                    {
-                      tipo:
-                        'bomba' as TipoPeca,
+                      <strong>
+                        FOTO 1 — FRENTE / PLACA
+                      </strong>
 
-                      icone:
-                        '🔧',
+                      <small>
+                        Fotografe a frente do
+                        veículo mostrando bem a
+                        placa.
+                      </small>
+                    </div>
+                  )}
 
-                      nome:
-                        'Bomba',
-                    },
-                    {
-                      tipo:
-                        'bico' as TipoPeca,
+                  {foto1 && (
+                    <div className="camera-overlay">
+                      📷 Toque para tirar outra
+                    </div>
+                  )}
+                </button>
 
-                      icone:
-                        '🔩',
+                <button
+                  type="button"
+                  className="camera-area camera-clickable"
+                  onClick={abrirCamera2}
+                  disabled={enviando}
+                >
+                  {foto2 ? (
+                    <img
+                      src={foto2}
+                      alt="Lateral do veículo"
+                      className="plate-photo"
+                    />
+                  ) : (
+                    <div className="camera-placeholder">
+                      <span className="camera-icon">
+                        📷
+                      </span>
 
-                      nome:
-                        'Bico',
-                    },
-                    {
-                      tipo:
-                        'turbina' as TipoPeca,
+                      <strong>
+                        FOTO 2 — LATERAL / MODELO
+                      </strong>
 
-                      icone:
-                        '🌀',
+                      <small>
+                        Fotografe a lateral do
+                        veículo mostrando o modelo.
+                      </small>
+                    </div>
+                  )}
 
-                      nome:
-                        'Turbina',
-                    },
-                    {
-                      tipo:
-                        'outro' as TipoPeca,
+                  {foto2 && (
+                    <div className="camera-overlay">
+                      📷 Toque para tirar outra
+                    </div>
+                  )}
+                </button>
+              </div>
+            )}
 
-                      icone:
-                        '⚙️',
+            {tipoEntrada ===
+              'peca' && (
+              <button
+                type="button"
+                className="camera-area camera-clickable"
+                onClick={abrirCamera1}
+                disabled={enviando}
+              >
+                {foto1 ? (
+                  <img
+                    src={foto1}
+                    alt="Foto da peça"
+                    className="plate-photo"
+                  />
+                ) : (
+                  <div className="camera-placeholder">
+                    <span className="camera-icon">
+                      📷
+                    </span>
 
-                      nome:
-                        'Outro',
-                    },
-                  ]
-                ).map(
-                  item => {
+                    <strong>
+                      Toque aqui para tirar a
+                      foto
+                    </strong>
 
-                    const selecionado =
-                      tiposPeca.includes(
-                        item.tipo
-                      );
-
-                    return (
-
-                      <button
-                        key={
-                          item.tipo
-                        }
-                        type="button"
-                        onClick={() =>
-                          alternarTipoPeca(
-                            item.tipo
-                          )
-                        }
-                        disabled={
-                          enviando
-                        }
-                        style={{
-                          padding:
-                            '14px 10px',
-
-                          border:
-                            selecionado
-                              ? '2px solid #d71920'
-                              : '1px solid #444',
-
-                          borderRadius:
-                            '10px',
-
-                          background:
-                            selecionado
-                              ? 'rgba(215, 25, 32, 0.16)'
-                              : '#181818',
-
-                          color:
-                            '#ffffff',
-
-                          cursor:
-                            enviando
-                              ? 'not-allowed'
-                              : 'pointer',
-
-                          fontWeight:
-                            800,
-
-                          display:
-                            'flex',
-
-                          alignItems:
-                            'center',
-
-                          justifyContent:
-                            'center',
-
-                          gap:
-                            '8px',
-
-                          fontSize:
-                            '15px',
-                        }}
-                      >
-
-                        <span
-                          style={{
-                            fontSize:
-                              '21px',
-                          }}
-                        >
-                          {
-                            item.icone
-                          }
-                        </span>
-
-                        <span>
-                          {
-                            item.nome
-                          }
-                        </span>
-
-                        {selecionado && (
-
-                          <span>
-                            ✓
-                          </span>
-
-                        )}
-
-                      </button>
-
-                    );
-                  }
+                    <small>
+                      Fotografe a peça
+                    </small>
+                  </div>
                 )}
 
-              </div>
+                {foto1 && (
+                  <div className="camera-overlay">
+                    📷 Toque para tirar outra foto
+                  </div>
+                )}
+              </button>
+            )}
 
-              {tiposPeca.length > 0 && (
+            {tipoEntrada ===
+              'veiculo' && (
+              <>
+                <div className="form-group">
+                  <label>PLACA *</label>
 
-                <small
-                  style={{
-                    marginTop:
-                      '10px',
-
-                    color:
-                      '#ffffff',
-
-                    fontWeight:
-                      700,
-                  }}
-                >
-                  Selecionadas:{' '}
-                  {
-                    tiposPeca
-                      .map(
-                        nomeTipoPeca
+                  <input
+                    type="text"
+                    value={placa}
+                    onChange={event =>
+                      alterarPlaca(
+                        event.target.value,
                       )
-                      .join(
-                        ', '
-                      )
-                  }
-                </small>
-
-              )}
-
-            </div>
-
-            {/* MODELO */}
-
-            <div className="form-group">
-
-              <label htmlFor="modeloPeca">
-                MODELO DO VEÍCULO *
-              </label>
-
-              <input
-                id="modeloPeca"
-                type="text"
-                value={
-                  modelo
-                }
-                onChange={(e) =>
-                  setModelo(
-                    e.target.value
-                  )
-                }
-                placeholder="Ex.: Volvo FH 540"
-                disabled={
-                  enviando
-                }
-              />
-
-              <small>
-                Informe o veículo onde a peça está aplicada.
-              </small>
-
-            </div>
-
-            {/* PLACA */}
-
-            <div className="form-group">
-
-              <label htmlFor="placaPeca">
-                PLACA DO VEÍCULO
-              </label>
-
-              <input
-                id="placaPeca"
-                type="text"
-                value={
-                  placa
-                }
-                onChange={(e) =>
-                  alterarPlaca(
-                    e.target.value
-                  )
-                }
-                placeholder="ABC1D23 — opcional"
-                maxLength={7}
-                disabled={
-                  enviando
-                }
-              />
-
-              <small>
-                Se souber a placa do veículo onde a peça está instalada, informe aqui.
-              </small>
-
-            </div>
-
-            {/* FROTA */}
-
-            <div className="form-group">
-
-              <label htmlFor="frotaPeca">
-                FROTA
-              </label>
-
-              <input
-                id="frotaPeca"
-                type="text"
-                value={
-                  frota
-                }
-                onChange={(e) =>
-                  setFrota(
-                    e.target.value
-                  )
-                }
-                placeholder="Número da frota — opcional"
-                disabled={
-                  enviando
-                }
-              />
-
-            </div>
-
-            {/* DESCRIÇÃO */}
-
-            <div className="form-group">
-
-              <label htmlFor="descricaoPeca">
-                DESCRIÇÃO / IDENTIFICAÇÃO DA PEÇA *
-              </label>
-
-              <textarea
-                id="descricaoPeca"
-                value={
-                  descricaoPeca
-                }
-                onChange={(e) =>
-                  setDescricaoPeca(
-                    e.target.value
-                  )
-                }
-                placeholder="Ex.: Bomba Bosch CP4 + 6 bicos injetores"
-                rows={3}
-                disabled={
-                  enviando
-                }
-              />
-
-              <small>
-                Informe detalhes que ajudem o laboratório a identificar a peça.
-              </small>
-
-            </div>
-
-          </>
-        )}
-
-        {/* ====================================
-            DADOS DO CLIENTE
-        ==================================== */}
-
-        <div className="divider">
-
-          <span>
-            Dados do cliente
-          </span>
-
-        </div>
-
-        <div className="form-group">
-
-          <label htmlFor="cliente">
-            NOME COMPLETO DO CLIENTE *
-          </label>
-
-          <input
-            id="cliente"
-            type="text"
-            value={
-              cliente
-            }
-            onChange={(e) =>
-              setCliente(
-                e.target.value
-              )
-            }
-            placeholder="Nome completo"
-            disabled={
-              enviando
-            }
-          />
-
-        </div>
-
-        {/* ====================================
-            TELEFONE
-        ==================================== */}
-
-        <div className="form-group">
-
-          <label htmlFor="telefone">
-            TELEFONE
-          </label>
-
-          <input
-            id="telefone"
-            type="tel"
-            value={
-              telefone
-            }
-            onChange={(e) =>
-              setTelefone(
-                e.target.value
-              )
-            }
-            placeholder="(00) 00000-0000"
-            disabled={
-              enviando
-            }
-          />
-
-          <small>
-            Opcional.
-          </small>
-
-        </div>
-
-        {/* ====================================
-            OBSERVAÇÃO
-        ==================================== */}
-
-        <div className="form-group">
-
-          <label htmlFor="observacao">
-            OBSERVAÇÃO
-          </label>
-
-          <textarea
-            id="observacao"
-            value={
-              observacao
-            }
-            onChange={(e) =>
-              setObservacao(
-                e.target.value
-              )
-            }
-            placeholder={
-              tipoEntrada === 'veiculo'
-                ? 'Ex.: Caminhão chegou com o para-brisa quebrado...'
-                : 'Ex.: Peça chegou com riscos, amassados ou outros detalhes...'
-            }
-            rows={4}
-            disabled={
-              enviando
-            }
-          />
-
-          <small>
-            Registre qualquer detalhe importante
-            sobre o estado em que o veículo ou
-            peça chegou à oficina.
-          </small>
-
-        </div>
-
-        {/* ====================================
-            RESUMO DAS PEÇAS
-        ==================================== */}
-
-        {tipoEntrada === 'peca' &&
-          tiposPeca.length > 0 && (
-
-          <div
-            style={{
-              padding:
-                '14px 16px',
-
-              marginBottom:
-                '16px',
-
-              border:
-                '1px solid #444',
-
-              borderLeft:
-                '4px solid #d71920',
-
-              borderRadius:
-                '10px',
-
-              background:
-                '#151515',
-
-              color:
-                '#ffffff',
-            }}
-          >
-
-            <div
-              style={{
-                fontSize:
-                  '12px',
-
-                color:
-                  '#999',
-
-                fontWeight:
-                  800,
-
-                marginBottom:
-                  '6px',
-
-                textTransform:
-                  'uppercase',
-              }}
-            >
-              Peças que serão registradas
-            </div>
-
-            <div
-              style={{
-                fontSize:
-                  '16px',
-
-                fontWeight:
-                  900,
-              }}
-            >
-
-              {
-                tiposPeca
-                  .map(
-                    nomeTipoPeca
-                  )
-                  .join(
-                    ' + '
-                  )
-              }
-
-            </div>
-
-            <small
-              style={{
-                display:
-                  'block',
-
-                marginTop:
-                  '6px',
-
-                color:
-                  '#aaa',
-              }}
-            >
-
-              {tiposPeca.length === 1
-                ? 'Será preparado um romaneio para esta peça.'
-                : `Serão preparados ${tiposPeca.length} romaneios, um para cada peça.`}
-
-            </small>
-
-          </div>
-
-        )}
-
-        {/* ====================================
-            ENVIAR
-        ==================================== */}
-
-        <button
-          type="button"
-          className="submit-button"
-          onClick={() =>
-            void enviar()
-          }
-          disabled={
-            enviando
-          }
-        >
-
-          {
-            enviando
-              ? 'ENVIANDO...'
-              : 'ENVIAR ENTRADA'
-          }
-
-        </button>
-
-      </section>
-
-      {/* ======================================
-          MODAL - VEÍCULO ENCONTRADO
-      ====================================== */}
-
-      {mostrarVeiculoEncontrado &&
-        veiculoEncontrado && (
-
-          <div
-            style={{
-              position:
-                'fixed',
-
-              inset:
-                0,
-
-              zIndex:
-                9999,
-
-              display:
-                'flex',
-
-              alignItems:
-                'center',
-
-              justifyContent:
-                'center',
-
-              padding:
-                '20px',
-
-              background:
-                'rgba(0, 0, 0, 0.78)',
-            }}
-          >
-
-            <div
-              style={{
-                width:
-                  '100%',
-
-                maxWidth:
-                  '440px',
-
-                padding:
-                  '24px',
-
-                border:
-                  '1px solid #444444',
-
-                borderTop:
-                  '4px solid #d71920',
-
-                borderRadius:
-                  '16px',
-
-                background:
-                  '#1b1b1b',
-
-                boxShadow:
-                  '0 20px 60px rgba(0,0,0,0.6)',
-              }}
-            >
-
-              <div
-                style={{
-                  textAlign:
-                    'center',
-
-                  marginBottom:
-                    '20px',
-                }}
-              >
-
-                <div
-                  style={{
-                    fontSize:
-                      '42px',
-
-                    marginBottom:
-                      '8px',
-                  }}
-                >
-                  🚗
+                    }
+                    maxLength={7}
+                    disabled={enviando}
+                    placeholder="ABC1D23"
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+
+                  <small>
+                    {consultandoPlaca
+                      ? '🔎 Procurando veículo no cadastro...'
+                      : 'Digite a placa completa para verificar o cadastro.'}
+                  </small>
                 </div>
 
-                <h2
+                <div className="form-group">
+                  <label>MODELO *</label>
+
+                  <input
+                    type="text"
+                    value={modelo}
+                    onChange={event =>
+                      setModelo(
+                        event.target.value,
+                      )
+                    }
+                    disabled={enviando}
+                    placeholder="Modelo do veículo"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>FROTA</label>
+
+                  <input
+                    type="text"
+                    value={frota}
+                    onChange={event =>
+                      setFrota(
+                        event.target.value,
+                      )
+                    }
+                    disabled={enviando}
+                    placeholder="Número da frota, se houver"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                </div>
+              </>
+            )}
+
+            {tipoEntrada ===
+              'peca' && (
+              <>
+                <div className="divider">
+                  <span>
+                    Dados da peça
+                  </span>
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    QUAIS PEÇAS ESTÃO ENTRANDO? *
+                  </label>
+
+                  <div
+                    style={{
+                      display:
+                        'grid',
+                      gridTemplateColumns:
+                        '1fr 1fr',
+                      gap: '10px',
+                      width: '100%',
+                    }}
+                  >
+                    {(
+                      [
+                        [
+                          'bomba',
+                          '🔧',
+                          'Bomba',
+                        ],
+                        [
+                          'bico',
+                          '🔩',
+                          'Bico',
+                        ],
+                        [
+                          'turbina',
+                          '🌀',
+                          'Turbina',
+                        ],
+                        [
+                          'outro',
+                          '⚙️',
+                          'Outro',
+                        ],
+                      ] as [
+                        TipoPeca,
+                        string,
+                        string,
+                      ][]
+                    ).map(
+                      (
+                        [
+                          tipo,
+                          icone,
+                          nome,
+                        ],
+                      ) => {
+                        const selecionado =
+                          tiposPeca.includes(
+                            tipo,
+                          )
+
+                        return (
+                          <button
+                            key={
+                              tipo
+                            }
+                            type="button"
+                            onClick={() =>
+                              alternarTipoPeca(
+                                tipo,
+                              )
+                            }
+                            disabled={enviando}
+                            style={{
+                              padding:
+                                '14px 10px',
+                              border:
+                                selecionado
+                                  ? '2px solid #d71920'
+                                  : '1px solid #444',
+                              borderRadius:
+                                '10px',
+                              background:
+                                selecionado
+                                  ? 'rgba(215,25,32,0.16)'
+                                  : '#181818',
+                              color:
+                                '#fff',
+                              fontWeight:
+                                800,
+                            }}
+                          >
+                            {icone}{' '}
+                            {nome}
+                          </button>
+                        )
+                      },
+                    )}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    MODELO DO VEÍCULO *
+                  </label>
+
+                  <input
+                    type="text"
+                    value={modelo}
+                    onChange={event =>
+                      setModelo(
+                        event.target.value,
+                      )
+                    }
+                    disabled={enviando}
+                    placeholder="Ex.: Volvo FH 540"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    PLACA DO VEÍCULO
+                  </label>
+
+                  <input
+                    type="text"
+                    value={placa}
+                    onChange={event =>
+                      alterarPlaca(
+                        event.target.value,
+                      )
+                    }
+                    maxLength={7}
+                    disabled={enviando}
+                    placeholder="ABC1D23 — opcional"
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>FROTA</label>
+
+                  <input
+                    type="text"
+                    value={frota}
+                    onChange={event =>
+                      setFrota(
+                        event.target.value,
+                      )
+                    }
+                    disabled={enviando}
+                    placeholder="Número da frota"
+                    autoCorrect="off"
+                    spellCheck={false}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>
+                    DESCRIÇÃO / IDENTIFICAÇÃO DA PEÇA *
+                  </label>
+
+                  <textarea
+                    value={descricaoPeca}
+                    onChange={event =>
+                      setDescricaoPeca(
+                        event.target.value,
+                      )
+                    }
+                    rows={3}
+                    disabled={enviando}
+                    placeholder="Ex.: Bomba Bosch CP4 + 6 bicos"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    autoCapitalize="sentences"
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="divider">
+              <span>
+                Dados do cliente
+              </span>
+            </div>
+
+            <div className="form-group">
+              <label>
+                NOME COMPLETO DO CLIENTE *
+              </label>
+
+              <input
+                type="text"
+                value={cliente}
+                onChange={event =>
+                  setCliente(
+                    event.target.value,
+                  )
+                }
+                disabled={enviando}
+                placeholder="Nome completo"
+                autoCorrect="off"
+                spellCheck={false}
+                autoCapitalize="words"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>TELEFONE</label>
+
+              <input
+                type="tel"
+                value={telefone}
+                onChange={event =>
+                  setTelefone(
+                    event.target.value,
+                  )
+                }
+                disabled={enviando}
+                placeholder="(00) 00000-0000"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>OBSERVAÇÃO</label>
+
+              <textarea
+                value={observacao}
+                onChange={event =>
+                  setObservacao(
+                    event.target.value,
+                  )
+                }
+                rows={4}
+                disabled={enviando}
+                placeholder="Detalhes importantes da entrada..."
+                autoCorrect="off"
+                spellCheck={false}
+              />
+            </div>
+
+            <button
+              type="button"
+              className="submit-button"
+              onClick={() =>
+                void enviar()
+              }
+              disabled={enviando}
+            >
+              {enviando
+                ? 'ENVIANDO...'
+                : 'ENVIAR ENTRADA'}
+            </button>
+          </section>
+        )}
+
+        {mostrarVeiculoEncontrado &&
+          veiculoEncontrado && (
+            <div
+              style={{
+                position: 'fixed',
+                inset: 0,
+                zIndex: 9999,
+                display: 'flex',
+                alignItems:
+                  'center',
+                justifyContent:
+                  'center',
+                padding: '20px',
+                background:
+                  'rgba(0,0,0,0.78)',
+              }}
+            >
+              <div
+                style={{
+                  width: '100%',
+                  maxWidth:
+                    '440px',
+                  padding: '24px',
+                  border:
+                    '1px solid #444',
+                  borderTop:
+                    '4px solid #d71920',
+                  borderRadius:
+                    '16px',
+                  background:
+                    '#1b1b1b',
+                  overflow:
+                    'hidden',
+                }}
+              >
+                <div
                   style={{
-                    margin:
-                      0,
+                    textAlign:
+                      'center',
+                    marginBottom:
+                      '20px',
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize:
+                        '42px',
+                    }}
+                  >
+                    🚗
+                  </div>
 
-                    color:
-                      '#ffffff',
+                  <h2
+                    style={{
+                      color:
+                        '#fff',
+                      margin:
+                        0,
+                    }}
+                  >
+                    VEÍCULO ENCONTRADO
+                  </h2>
+                </div>
 
-                    fontSize:
-                      '22px',
+                <CampoOS
+                  label="PLACA"
+                  valor={
+                    veiculoEncontrado.placa ||
+                    ''
+                  }
+                />
 
+                <CampoOS
+                  label="MODELO"
+                  valor={
+                    veiculoEncontrado.modelo ||
+                    ''
+                  }
+                />
+
+                <CampoOS
+                  label="FROTA"
+                  valor={
+                    veiculoEncontrado.frota ||
+                    ''
+                  }
+                />
+
+                <CampoOS
+                  label="CLIENTE"
+                  valor={
+                    veiculoEncontrado.cliente_nome ||
+                    ''
+                  }
+                />
+
+                <CampoOS
+                  label="TELEFONE"
+                  valor={
+                    veiculoEncontrado.telefone ||
+                    ''
+                  }
+                />
+
+                <button
+                  type="button"
+                  onClick={
+                    usarCadastroEncontrado
+                  }
+                  style={{
+                    width: '100%',
+                    marginTop:
+                      '18px',
+                    padding:
+                      '14px',
+                    border: 'none',
+                    borderRadius:
+                      '10px',
+                    background:
+                      '#d71920',
+                    color: '#fff',
                     fontWeight:
                       900,
                   }}
                 >
-                  VEÍCULO ENCONTRADO
-                </h2>
+                  ✓ USAR ESTE CADASTRO
+                </button>
 
-                <p
+                <button
+                  type="button"
+                  onClick={
+                    cadastrarOutroVeiculo
+                  }
                   style={{
-                    margin:
-                      '8px 0 0',
-
-                    color:
-                      '#999999',
-
-                    fontSize:
+                    width: '100%',
+                    marginTop:
+                      '10px',
+                    padding:
                       '14px',
-
-                    lineHeight:
-                      1.4,
+                    border:
+                      '1px solid #555',
+                    borderRadius:
+                      '10px',
+                    background:
+                      '#292929',
+                    color: '#fff',
+                    fontWeight:
+                      800,
                   }}
                 >
-                  Já existe um cadastro
-                  desse veículo no sistema.
-                </p>
-
+                  NÃO, CADASTRAR OUTRO
+                </button>
               </div>
-
-              <div
-                style={{
-                  padding:
-                    '16px',
-
-                  border:
-                    '1px solid #383838',
-
-                  borderRadius:
-                    '12px',
-
-                  background:
-                    '#101010',
-                }}
-              >
-
-                <div
-                  style={{
-                    marginBottom:
-                      '14px',
-                  }}
-                >
-
-                  <div
-                    style={{
-                      color:
-                        '#888888',
-
-                      fontSize:
-                        '12px',
-
-                      fontWeight:
-                        700,
-
-                      marginBottom:
-                        '4px',
-
-                      textTransform:
-                        'uppercase',
-                    }}
-                  >
-                    Placa
-                  </div>
-
-                  <div
-                    style={{
-                      color:
-                        '#ffffff',
-
-                      fontSize:
-                        '23px',
-
-                      fontWeight:
-                        900,
-
-                      letterSpacing:
-                        '1.5px',
-                    }}
-                  >
-                    {
-                      veiculoEncontrado.placa ||
-                      '-'
-                    }
-                  </div>
-
-                </div>
-
-                <div
-                  style={{
-                    marginBottom:
-                      '14px',
-                  }}
-                >
-
-                  <div
-                    style={{
-                      color:
-                        '#888888',
-
-                      fontSize:
-                        '12px',
-
-                      fontWeight:
-                        700,
-
-                      marginBottom:
-                        '4px',
-
-                      textTransform:
-                        'uppercase',
-                    }}
-                  >
-                    Modelo
-                  </div>
-
-                  <div
-                    style={{
-                      color:
-                        '#ffffff',
-
-                      fontSize:
-                        '17px',
-
-                      fontWeight:
-                        800,
-                    }}
-                  >
-                    {
-                      veiculoEncontrado.modelo ||
-                      '-'
-                    }
-                  </div>
-
-                </div>
-
-                <div
-                  style={{
-                    marginBottom:
-                      '14px',
-                  }}
-                >
-
-                  <div
-                    style={{
-                      color:
-                        '#888888',
-
-                      fontSize:
-                        '12px',
-
-                      fontWeight:
-                        700,
-
-                      marginBottom:
-                        '4px',
-
-                      textTransform:
-                        'uppercase',
-                    }}
-                  >
-                    Frota
-                  </div>
-
-                  <div
-                    style={{
-                      color:
-                        '#ffffff',
-
-                      fontSize:
-                        '16px',
-
-                      fontWeight:
-                        700,
-                    }}
-                  >
-                    {
-                      veiculoEncontrado.frota ||
-                      'Não informada'
-                    }
-                  </div>
-
-                </div>
-
-                <div
-                  style={{
-                    marginBottom:
-                      '14px',
-                  }}
-                >
-
-                  <div
-                    style={{
-                      color:
-                        '#888888',
-
-                      fontSize:
-                        '12px',
-
-                      fontWeight:
-                        700,
-
-                      marginBottom:
-                        '4px',
-
-                      textTransform:
-                        'uppercase',
-                    }}
-                  >
-                    Cliente
-                  </div>
-
-                  <div
-                    style={{
-                      color:
-                        '#ffffff',
-
-                      fontSize:
-                        '17px',
-
-                      fontWeight:
-                        800,
-                    }}
-                  >
-                    {
-                      veiculoEncontrado.cliente_nome ||
-                      '-'
-                    }
-                  </div>
-
-                </div>
-
-                <div>
-
-                  <div
-                    style={{
-                      color:
-                        '#888888',
-
-                      fontSize:
-                        '12px',
-
-                      fontWeight:
-                        700,
-
-                      marginBottom:
-                        '4px',
-
-                      textTransform:
-                        'uppercase',
-                    }}
-                  >
-                    Telefone
-                  </div>
-
-                  <div
-                    style={{
-                      color:
-                        '#ffffff',
-
-                      fontSize:
-                        '16px',
-
-                      fontWeight:
-                        700,
-                    }}
-                  >
-                    {
-                      veiculoEncontrado.telefone ||
-                      'Não informado'
-                    }
-                  </div>
-
-                </div>
-
-              </div>
-
-              <p
-                style={{
-                  margin:
-                    '18px 0',
-
-                  color:
-                    '#aaaaaa',
-
-                  fontSize:
-                    '13px',
-
-                  lineHeight:
-                    1.5,
-
-                  textAlign:
-                    'center',
-                }}
-              >
-                Se for o mesmo veículo,
-                podemos preencher os dados
-                automaticamente.
-              </p>
-
-              <button
-                type="button"
-                onClick={
-                  usarCadastroEncontrado
-                }
-                style={{
-                  width:
-                    '100%',
-
-                  padding:
-                    '15px',
-
-                  border:
-                    'none',
-
-                  borderRadius:
-                    '10px',
-
-                  background:
-                    '#d71920',
-
-                  color:
-                    '#ffffff',
-
-                  fontSize:
-                    '15px',
-
-                  fontWeight:
-                    900,
-
-                  cursor:
-                    'pointer',
-
-                  marginBottom:
-                    '10px',
-                }}
-              >
-                ✓ USAR ESTE CADASTRO
-              </button>
-
-              <button
-                type="button"
-                onClick={
-                  cadastrarOutroVeiculo
-                }
-                style={{
-                  width:
-                    '100%',
-
-                  padding:
-                    '14px',
-
-                  border:
-                    '1px solid #555555',
-
-                  borderRadius:
-                    '10px',
-
-                  background:
-                    '#292929',
-
-                  color:
-                    '#ffffff',
-
-                  fontSize:
-                    '14px',
-
-                  fontWeight:
-                    800,
-
-                  cursor:
-                    'pointer',
-                }}
-              >
-                NÃO, CADASTRAR OUTRO
-              </button>
-
             </div>
-
-          </div>
-
-        )}
-
-    </main>
-  );
+          )}
+      </main>
+    </>
+  )
 }
 
-export default App;
+function InfoCompacta(
+  props: {
+    label: string
+    valor: string
+  },
+) {
+  return (
+    <div
+      style={{
+        minWidth: 0,
+        width: '100%',
+        overflow: 'hidden',
+        lineHeight: 1.35,
+      }}
+    >
+      <span
+        style={{
+          color: '#777',
+          fontSize: '9px',
+          fontWeight: 900,
+          marginRight: '5px',
+        }}
+      >
+        {props.label}:
+      </span>
+
+      <span
+        style={{
+          color: '#fff',
+          fontSize: '12px',
+          fontWeight: 700,
+          overflowWrap:
+            'anywhere',
+          wordBreak:
+            'break-word',
+        }}
+      >
+        {props.valor || '—'}
+      </span>
+    </div>
+  )
+}
+
+function CampoOS(
+  props: {
+    label: string
+    valor: string
+  },
+) {
+  return (
+    <div
+      style={{
+        padding:
+          '11px 12px',
+        marginBottom:
+          '8px',
+        background:
+          '#101010',
+        border:
+          '1px solid #303030',
+        borderRadius:
+          '8px',
+        width:
+          '100%',
+        maxWidth:
+          '100%',
+        overflow:
+          'hidden',
+      }}
+    >
+      <div
+        style={{
+          color:
+            '#777',
+          fontSize:
+            '10px',
+          fontWeight:
+            800,
+          marginBottom:
+            '4px',
+        }}
+      >
+        {props.label}
+      </div>
+
+      <div
+        style={{
+          color:
+            '#fff',
+          fontSize:
+            '13px',
+          fontWeight:
+            700,
+          overflowWrap:
+            'anywhere',
+          wordBreak:
+            'break-word',
+          minHeight:
+            '16px',
+        }}
+      >
+        {props.valor}
+      </div>
+    </div>
+  )
+}
+
+export default App
