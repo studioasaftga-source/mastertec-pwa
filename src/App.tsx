@@ -168,10 +168,13 @@ function formatarMoedaNumero(valor: number) {
 function statusOSFechada(
   status: string | null | undefined,
 ) {
+  // 'servico_finalizado' significa que o funcionário enviou o serviço
+  // para o painel. A O.S. continua editável até o responsável do painel
+  // realmente encerrá-la.
   return (
-    status === 'servico_finalizado' ||
     status === 'concluida' ||
-    status === 'encerrada'
+    status === 'encerrada' ||
+    status === 'cancelada'
   )
 }
 
@@ -347,6 +350,8 @@ function App() {
 
   const restauracaoConcluida = useRef(false)
 
+  const finalizacaoEmAndamento = useRef(false)
+
   useEffect(() => {
     try {
       const salvo = localStorage.getItem(
@@ -491,7 +496,7 @@ function App() {
   }
 
   const carregarMinhasOrdens =
-    useCallback(async () => {
+    useCallback(async (mostrarCarregando = true) => {
       if (
         !funcionario?.id ||
         !funcionario.codigo_acesso
@@ -500,7 +505,10 @@ function App() {
       }
 
       try {
-        setCarregandoOrdens(true)
+        if (mostrarCarregando) {
+          setCarregandoOrdens(true)
+        }
+
         setErroOrdens('')
 
         const {
@@ -518,23 +526,43 @@ function App() {
           throw error
         }
 
-        setMinhasOrdens(
-          (data ?? []) as OrdemServicoPWA[],
-        )
+        const ordensAtualizadas =
+          (data ?? []) as OrdemServicoPWA[]
+
+        setMinhasOrdens(ordensAtualizadas)
+
+        // Sincroniza também a O.S. que estiver aberta na tela.
+        // Assim, quando o painel encerrar a O.S., o PWA troca
+        // imediatamente de editável para somente visualização.
+        setOrdemAberta(atual => {
+          if (!atual) {
+            return atual
+          }
+
+          return (
+            ordensAtualizadas.find(
+              ordem => ordem.id === atual.id,
+            ) || atual
+          )
+        })
       } catch (error: any) {
         console.error(
           'ERRO AO CARREGAR MINHAS OS:',
           error,
         )
 
-        setMinhasOrdens([])
+        if (mostrarCarregando) {
+          setMinhasOrdens([])
+        }
 
         setErroOrdens(
           error?.message ||
             'Não foi possível carregar suas Ordens de Serviço.',
         )
       } finally {
-        setCarregandoOrdens(false)
+        if (mostrarCarregando) {
+          setCarregandoOrdens(false)
+        }
       }
     }, [
       funcionario?.id,
@@ -543,16 +571,68 @@ function App() {
 
   useEffect(() => {
     if (
-      funcionario?.id &&
-      telaPrincipal === 'ordens'
+      !funcionario?.id ||
+      telaPrincipal !== 'ordens'
     ) {
-      void carregarMinhasOrdens()
+      return
+    }
+
+    void carregarMinhasOrdens()
+
+    // Consulta periodicamente o status real da O.S. no banco.
+    // Isso evita que o PWA continue editável usando um status antigo
+    // depois que o painel encerrou a O.S.
+    const intervalo = window.setInterval(() => {
+      void carregarMinhasOrdens(false)
+    }, 5000)
+
+    return () => {
+      window.clearInterval(intervalo)
     }
   }, [
     funcionario?.id,
     telaPrincipal,
     carregarMinhasOrdens,
   ])
+
+  async function buscarOrdemAtualPorCodigo(
+    ordemId: string,
+  ): Promise<OrdemServicoPWA | null> {
+    if (!funcionario?.codigo_acesso) {
+      return null
+    }
+
+    const {
+      data,
+      error,
+    } = await supabase.rpc(
+      'buscar_minhas_ordens_por_codigo',
+      {
+        p_codigo:
+          funcionario.codigo_acesso,
+      },
+    )
+
+    if (error) {
+      throw error
+    }
+
+    const ordensAtualizadas =
+      (data ?? []) as OrdemServicoPWA[]
+
+    const ordemAtual =
+      ordensAtualizadas.find(
+        ordem => ordem.id === ordemId,
+      ) || null
+
+    setMinhasOrdens(ordensAtualizadas)
+
+    if (ordemAtual) {
+      setOrdemAberta(ordemAtual)
+    }
+
+    return ordemAtual
+  }
 
   async function abrirMinhaOS(
     ordem: OrdemServicoPWA,
@@ -561,12 +641,20 @@ function App() {
       setCarregandoDetalhesOS(true)
       setErroOrdens('')
 
-      setOrdemAberta(ordem)
+      // Nunca abrimos a O.S. usando apenas o status antigo que veio
+      // da lista. Primeiro buscamos o status atual no banco.
+      const ordemAtual =
+        await buscarOrdemAtualPorCodigo(ordem.id)
+
+      const ordemParaAbrir =
+        ordemAtual || ordem
+
+      setOrdemAberta(ordemParaAbrir)
       setEntradaDaOrdem(null)
       setTarefasOriginais([])
 
       const entradaPromise =
-        ordem.entrada_id
+        ordemParaAbrir.entrada_id
           ? supabase
               .from('entradas_veiculos')
               .select(
@@ -588,7 +676,7 @@ function App() {
                 foto_url_2
               `,
               )
-              .eq('id', ordem.entrada_id)
+              .eq('id', ordemParaAbrir.entrada_id)
               .maybeSingle()
           : Promise.resolve({
               data: null,
@@ -613,7 +701,7 @@ function App() {
           )
           .eq(
             'ordem_servico_id',
-            ordem.id,
+            ordemParaAbrir.id,
           )
           .order('ordem', {
             ascending: true,
@@ -646,7 +734,7 @@ function App() {
       setTarefasOriginais(tarefas)
 
       if (tarefas.length > 0) {
-        const linhasExistentes =
+        const linhasExistentes: LinhaServico[] =
           tarefas.map(tarefa => ({
             id: tarefa.id,
             descricao:
@@ -666,7 +754,7 @@ function App() {
           }))
 
         if (
-          !statusOSFechada(ordem.status)
+          !statusOSFechada(ordemParaAbrir.status)
         ) {
           linhasExistentes.push(
             criarLinhaServico(),
@@ -774,6 +862,12 @@ function App() {
       return
     }
 
+    // Protege contra dois toques rápidos no botão. Sem esta trava,
+    // duas requisições podem inserir a mesma linha de serviço.
+    if (finalizacaoEmAndamento.current) {
+      return
+    }
+
     if (!osEditavel) {
       alert(
         'Esta O.S. está encerrada e está disponível somente para visualização.',
@@ -783,7 +877,34 @@ function App() {
     }
 
     try {
+      finalizacaoEmAndamento.current = true
       setFinalizandoOS(true)
+
+      // CONFIRMA O STATUS REAL ANTES DE ALTERAR QUALQUER TAREFA.
+      // Se o painel já encerrou a O.S., o PWA para imediatamente
+      // e não envia nenhuma alteração.
+      const ordemAtual =
+        await buscarOrdemAtualPorCodigo(ordemAberta.id)
+
+      if (!ordemAtual) {
+        throw new Error(
+          'Esta O.S. não está mais disponível para este funcionário.',
+        )
+      }
+
+      if (statusOSFechada(ordemAtual.status)) {
+        setOrdemAberta(ordemAtual)
+        await abrirMinhaOS(ordemAtual)
+
+        alert(
+          'Esta O.S. já foi encerrada pelo painel. Não é mais possível fazer alterações.',
+        )
+
+        return
+      }
+
+      // Usa o estado recém-consultado como fonte da verdade.
+      setOrdemAberta(ordemAtual)
 
       const linhasPreenchidas =
         linhasServico
@@ -962,57 +1083,39 @@ function App() {
       const agora =
         new Date().toISOString()
 
-      const {
-        data: osAtualizada,
-        error: erroOS,
-      } = await supabase
-        .from('ordens_servico')
-        .update({
-          status: 'servico_finalizado',
-          responsavel_id:
+      const { error: erroOS } =
+        await supabase
+          .from('ordens_servico')
+          .update({
+            status: 'servico_finalizado',
+            responsavel_id:
+              funcionario.id,
+            valor_servicos: total,
+            valor_pecas: 0,
+            valor_total: total,
+            data_conclusao: agora,
+            updated_at: agora,
+          })
+          .eq('id', ordemAberta.id)
+          .eq(
+            'responsavel_id',
             funcionario.id,
-          valor_servicos: total,
-          valor_pecas: 0,
-          valor_total: total,
-          data_conclusao: agora,
-          updated_at: agora,
-        })
-        .eq('id', ordemAberta.id)
-        .eq(
-          'responsavel_id',
-          funcionario.id,
-        )
-        .select(`
-          id,
-          empresa_id,
-          entrada_id,
-          responsavel_id,
-          numero,
-          titulo,
-          descricao,
-          status,
-          prioridade,
-          data_entrada,
-          data_inicio,
-          data_conclusao,
-          observacoes,
-          percentual_comissao,
-          valor_servicos,
-          valor_pecas,
-          valor_total,
-          valor_comissao,
-          updated_at
-        `)
-        .maybeSingle()
+          )
 
       if (erroOS) {
         throw erroOS
       }
 
-      if (!osAtualizada) {
-        throw new Error(
-          'A O.S. não pôde ser finalizada. Verifique se você continua sendo o responsável por ela.',
-        )
+      const osAtualizada: OrdemServicoPWA = {
+        ...ordemAberta,
+        status: 'servico_finalizado',
+        responsavel_id:
+          funcionario.id,
+        valor_servicos: total,
+        valor_pecas: 0,
+        valor_total: total,
+        data_conclusao: agora,
+        updated_at: agora,
       }
 
       setMinhasOrdens(anterior =>
@@ -1035,9 +1138,7 @@ function App() {
         ),
       )
 
-      await abrirMinhaOS(
-        osAtualizada as OrdemServicoPWA,
-      )
+      await abrirMinhaOS(osAtualizada)
 
       alert(
         'O.S. finalizada e enviada com sucesso!',
@@ -1053,6 +1154,7 @@ function App() {
           'Não foi possível finalizar a O.S.',
       )
     } finally {
+      finalizacaoEmAndamento.current = false
       setFinalizandoOS(false)
     }
   }
@@ -1959,6 +2061,10 @@ function App() {
       }
 
       const dadosEntrada = {
+        empresa_id:
+          funcionario.empresa_id ||
+          '128d621e-4ee5-4f65-9790-0328a3658230',
+
         funcionario_id:
           funcionario.id,
 
@@ -2167,8 +2273,7 @@ function App() {
   return (
     <>
       <style>
-        {`
-          html,
+        {`html,
           body,
           #root {
             width: 100%;
@@ -2722,7 +2827,9 @@ function App() {
                               >
                                 {encerrada
                                   ? 'ENCERRADA'
-                                  : 'EM ANDAMENTO'}
+                                  : ordem.status === 'servico_finalizado'
+                                    ? 'AGUARDANDO PAINEL'
+                                    : 'EM ANDAMENTO'}
                               </span>
                             </div>
 
@@ -2870,6 +2977,31 @@ function App() {
                               : 'O.S.'}
                           </h2>
                         </div>
+
+                        {ordemAberta.status === 'servico_finalizado' && (
+                          <div
+                            style={{
+                              padding:
+                                '7px 10px',
+                              border:
+                                '1px solid #5d4a1d',
+                              borderRadius:
+                                '999px',
+                              background:
+                                '#2a2110',
+                              color:
+                                '#f5cc73',
+                              fontSize:
+                                '10px',
+                              fontWeight:
+                                900,
+                              whiteSpace:
+                                'nowrap',
+                            }}
+                          >
+                            🕒 AGUARDANDO PAINEL
+                          </div>
+                        )}
 
                         {statusOSFechada(
                           ordemAberta.status,
@@ -3424,7 +3556,9 @@ function App() {
                         >
                           {finalizandoOS
                             ? 'ENVIANDO...'
-                            : 'FINALIZAR E ENVIAR'}
+                            : ordemAberta.status === 'servico_finalizado'
+                              ? 'ATUALIZAR E ENVIAR'
+                              : 'FINALIZAR E ENVIAR'}
                         </button>
                       )}
                     </div>
