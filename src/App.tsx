@@ -70,6 +70,7 @@ type OrdemServicoPWA = {
   responsavel_id: string | null
   numero: number | null
   titulo: string
+  cliente_nome: string | null
   descricao: string | null
   status: string
   prioridade: string
@@ -496,6 +497,59 @@ function App() {
     setTelaPrincipal('entrada')
   }
 
+  async function anexarNomesClientes(
+    ordens: OrdemServicoPWA[],
+  ): Promise<OrdemServicoPWA[]> {
+    const entradasIds = Array.from(
+      new Set(
+        ordens
+          .map(ordem => ordem.entrada_id)
+          .filter((id): id is string => !!id),
+      ),
+    )
+
+    if (entradasIds.length === 0) {
+      return ordens
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('entradas_veiculos')
+        .select('id,cliente_nome')
+        .in('id', entradasIds)
+
+      if (error) {
+        console.warn(
+          'Não foi possível carregar os nomes dos clientes das O.S.:',
+          error,
+        )
+        return ordens
+      }
+
+      const clientes = new Map<string, string | null>(
+        (data ?? []).map(item => [
+          item.id,
+          item.cliente_nome ?? null,
+        ]),
+      )
+
+      return ordens.map(ordem => ({
+        ...ordem,
+        cliente_nome: ordem.entrada_id
+          ? clientes.get(ordem.entrada_id) ?? ordem.cliente_nome ?? null
+          : ordem.cliente_nome ?? null,
+      }))
+    } catch (error) {
+      console.warn(
+        'Erro ao anexar nomes dos clientes às O.S.:',
+        error,
+      )
+      return ordens
+    }
+  }
+
+  const ordemAbertaIdAtual = ordemAberta?.id ?? null
+
   const carregarMinhasOrdens =
     useCallback(async (mostrarCarregando = true) => {
       if (
@@ -527,25 +581,93 @@ function App() {
           throw error
         }
 
-        const ordensAtualizadas =
-          (data ?? []) as OrdemServicoPWA[]
+        let ordensAtualizadas =
+          await anexarNomesClientes(
+            (data ?? []) as OrdemServicoPWA[],
+          )
+
+        // Para a O.S. atualmente aberta, consulta também a tabela diretamente.
+        // Isso evita que o PWA fique com status antigo quando o painel acabou
+        // de encerrar a O.S. ou alterou o responsável.
+        if (ordemAbertaIdAtual) {
+          try {
+            const { data: ordemDireta, error: erroDireto } =
+              await supabase
+                .from('ordens_servico')
+                .select(
+                  `
+                  id,
+                  empresa_id,
+                  entrada_id,
+                  responsavel_id,
+                  numero,
+                  titulo,
+                  descricao,
+                  status,
+                  prioridade,
+                  data_entrada,
+                  data_inicio,
+                  data_conclusao,
+                  observacoes,
+                  percentual_comissao,
+                  valor_servicos,
+                  valor_pecas,
+                  valor_total,
+                  valor_comissao,
+                  updated_at
+                `,
+                )
+                .eq('id', ordemAbertaIdAtual)
+                .maybeSingle()
+
+            if (!erroDireto && ordemDireta) {
+              const ordemDiretaComCliente =
+                (await anexarNomesClientes([
+                  ordemDireta as OrdemServicoPWA,
+                ]))[0]
+
+              const indice = ordensAtualizadas.findIndex(
+                ordem => ordem.id === ordemAbertaIdAtual,
+              )
+
+              ordensAtualizadas =
+                indice >= 0
+                  ? ordensAtualizadas.map(ordem =>
+                      ordem.id === ordemAbertaIdAtual
+                        ? ordemDiretaComCliente
+                        : ordem,
+                    )
+                  : [ordemDiretaComCliente, ...ordensAtualizadas]
+
+              setOrdemAberta(ordemDiretaComCliente)
+            } else {
+              setOrdemAberta(atual => {
+                if (!atual) return atual
+                return (
+                  ordensAtualizadas.find(
+                    ordem => ordem.id === atual.id,
+                  ) || atual
+                )
+              })
+            }
+          } catch (error) {
+            console.warn(
+              'Não foi possível sincronizar diretamente a O.S. aberta:',
+              error,
+            )
+
+            setOrdemAberta(atual => {
+              if (!atual) return atual
+              return (
+                ordensAtualizadas.find(
+                  ordem => ordem.id === atual.id,
+                ) || atual
+              )
+            })
+          }
+        }
 
         setMinhasOrdens(ordensAtualizadas)
-
-        // Sincroniza também a O.S. que estiver aberta na tela.
-        // Assim, quando o painel encerrar a O.S., o PWA troca
-        // imediatamente de editável para somente visualização.
-        setOrdemAberta(atual => {
-          if (!atual) {
-            return atual
-          }
-
-          return (
-            ordensAtualizadas.find(
-              ordem => ordem.id === atual.id,
-            ) || atual
-          )
-        })
       } catch (error: any) {
         console.error(
           'ERRO AO CARREGAR MINHAS OS:',
@@ -568,6 +690,7 @@ function App() {
     }, [
       funcionario?.id,
       funcionario?.codigo_acesso,
+      ordemAbertaIdAtual,
     ])
 
   useEffect(() => {
@@ -599,7 +722,73 @@ function App() {
   async function buscarOrdemAtualPorCodigo(
     ordemId: string,
   ): Promise<OrdemServicoPWA | null> {
-    if (!funcionario?.codigo_acesso) {
+    if (!funcionario?.id) {
+      return null
+    }
+
+    // Primeiro lê diretamente a O.S. pelo ID. O status retornado aqui é o
+    // estado atual do banco, inclusive depois que o painel a encerrou.
+    try {
+      const { data: ordemDireta, error: erroDireto } =
+        await supabase
+          .from('ordens_servico')
+          .select(
+            `
+            id,
+            empresa_id,
+            entrada_id,
+            responsavel_id,
+            numero,
+            titulo,
+            descricao,
+            status,
+            prioridade,
+            data_entrada,
+            data_inicio,
+            data_conclusao,
+            observacoes,
+            percentual_comissao,
+            valor_servicos,
+            valor_pecas,
+            valor_total,
+            valor_comissao,
+            updated_at
+          `,
+          )
+          .eq('id', ordemId)
+          .maybeSingle()
+
+      if (!erroDireto && ordemDireta) {
+        const ordemComCliente =
+          (await anexarNomesClientes([
+            ordemDireta as OrdemServicoPWA,
+          ]))[0]
+
+        setMinhasOrdens(anterior => {
+          const existe = anterior.some(
+            ordem => ordem.id === ordemId,
+          )
+
+          return existe
+            ? anterior.map(ordem =>
+                ordem.id === ordemId
+                  ? ordemComCliente
+                  : ordem,
+              )
+            : [ordemComCliente, ...anterior]
+        })
+
+        setOrdemAberta(ordemComCliente)
+        return ordemComCliente
+      }
+    } catch (error) {
+      console.warn(
+        'Consulta direta da O.S. falhou; usando a RPC como fallback:',
+        error,
+      )
+    }
+
+    if (!funcionario.codigo_acesso) {
       return null
     }
 
@@ -619,7 +808,9 @@ function App() {
     }
 
     const ordensAtualizadas =
-      (data ?? []) as OrdemServicoPWA[]
+      await anexarNomesClientes(
+        (data ?? []) as OrdemServicoPWA[],
+      )
 
     const ordemAtual =
       ordensAtualizadas.find(
@@ -2791,16 +2982,39 @@ function App() {
                                 gap: '10px',
                               }}
                             >
-                              <strong
+                              <div
                                 style={{
-                                  fontSize:
-                                    '17px',
+                                  minWidth: 0,
+                                  display: 'flex',
+                                  alignItems: 'baseline',
+                                  gap: '8px',
+                                  flexWrap: 'wrap',
                                 }}
                               >
-                                {ordem.numero
-                                  ? `O.S. #${ordem.numero}`
-                                  : 'O.S.'}
-                              </strong>
+                                <strong
+                                  style={{
+                                    fontSize:
+                                      '17px',
+                                  }}
+                                >
+                                  {ordem.numero
+                                    ? `O.S. #${ordem.numero}`
+                                    : 'O.S.'}
+                                </strong>
+
+                                {ordem.cliente_nome && (
+                                  <span
+                                    style={{
+                                      color: '#f0f0f0',
+                                      fontSize: '13px',
+                                      fontWeight: 800,
+                                      overflowWrap: 'anywhere',
+                                    }}
+                                  >
+                                    {ordem.cliente_nome}
+                                  </span>
+                                )}
+                              </div>
 
                               <span
                                 style={{
@@ -2963,20 +3177,40 @@ function App() {
                             ORDEM DE SERVIÇO
                           </div>
 
-                          <h2
+                          <div
                             style={{
-                              margin:
-                                '4px 0 0',
-                              color:
-                                '#fff',
-                              overflowWrap:
-                                'anywhere',
+                              marginTop: '4px',
+                              display: 'flex',
+                              alignItems: 'baseline',
+                              gap: '9px',
+                              flexWrap: 'wrap',
                             }}
                           >
-                            {ordemAberta.numero
-                              ? `O.S. #${ordemAberta.numero}`
-                              : 'O.S.'}
-                          </h2>
+                            <h2
+                              style={{
+                                margin: 0,
+                                color: '#fff',
+                                overflowWrap: 'anywhere',
+                              }}
+                            >
+                              {ordemAberta.numero
+                                ? `O.S. #${ordemAberta.numero}`
+                                : 'O.S.'}
+                            </h2>
+
+                            {ordemAberta.cliente_nome && (
+                              <span
+                                style={{
+                                  color: '#f0f0f0',
+                                  fontSize: '14px',
+                                  fontWeight: 800,
+                                  overflowWrap: 'anywhere',
+                                }}
+                              >
+                                {ordemAberta.cliente_nome}
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {ordemAberta.status === 'servico_finalizado' && (
