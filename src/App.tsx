@@ -1400,6 +1400,72 @@ function App() {
     ).format(numero)
   }
 
+  async function prepararFotoParaUpload(
+    arquivo: File,
+  ): Promise<File> {
+    if (
+      arquivo.type === 'image/jpeg' &&
+      arquivo.name.toLowerCase().endsWith('.jpg')
+    ) {
+      return arquivo
+    }
+
+    const url = URL.createObjectURL(arquivo)
+
+    try {
+      const imagem = new Image()
+
+      imagem.decoding = 'async'
+      imagem.src = url
+
+      await new Promise<void>((resolve, reject) => {
+        imagem.onload = () => resolve()
+        imagem.onerror = () =>
+          reject(new Error('Não foi possível processar a imagem.'))
+      })
+
+      const maxLado = 1600
+      const escala = Math.min(1, maxLado / Math.max(imagem.naturalWidth, imagem.naturalHeight))
+      const largura = Math.max(1, Math.round(imagem.naturalWidth * escala))
+      const altura = Math.max(1, Math.round(imagem.naturalHeight * escala))
+
+      const canvas = document.createElement('canvas')
+      canvas.width = largura
+      canvas.height = altura
+
+      const contexto = canvas.getContext('2d')
+
+      if (!contexto) {
+        throw new Error('Não foi possível preparar a imagem.')
+      }
+
+      contexto.drawImage(imagem, 0, 0, largura, altura)
+
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, 'image/jpeg', 0.82),
+      )
+
+      if (!blob) {
+        throw new Error('Não foi possível converter a imagem para JPEG.')
+      }
+
+      const nomeBase =
+        arquivo.name.replace(/\.[^.]+$/, '') ||
+        'foto'
+
+      return new File(
+        [blob],
+        `${nomeBase}.jpg`,
+        {
+          type: 'image/jpeg',
+          lastModified: Date.now(),
+        },
+      )
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  }
+
   function arquivoParaBase64(
     arquivo: File,
   ): Promise<string> {
@@ -1771,13 +1837,16 @@ function App() {
     }
 
     try {
+      const arquivoProcessado =
+        await prepararFotoParaUpload(arquivo)
+
       const base64 =
         await arquivoParaBase64(
-          arquivo,
+          arquivoProcessado,
         )
 
       setArquivoFoto1(
-        arquivo,
+        arquivoProcessado,
       )
 
       setFoto1(base64)
@@ -1785,10 +1854,8 @@ function App() {
       await salvarFormulario({
         foto1: {
           base64,
-          nome: arquivo.name,
-          tipo:
-            arquivo.type ||
-            'image/jpeg',
+          nome: arquivoProcessado.name,
+          tipo: 'image/jpeg',
         },
       })
     } catch (error) {
@@ -1809,11 +1876,8 @@ function App() {
         ''
     }
 
-    if (
-      galleryInput1Ref.current
-    ) {
-      galleryInput1Ref.current.value =
-        ''
+    if (galleryInput1Ref.current) {
+      galleryInput1Ref.current.value = ''
     }
   }
 
@@ -1828,13 +1892,16 @@ function App() {
     }
 
     try {
+      const arquivoProcessado =
+        await prepararFotoParaUpload(arquivo)
+
       const base64 =
         await arquivoParaBase64(
-          arquivo,
+          arquivoProcessado,
         )
 
       setArquivoFoto2(
-        arquivo,
+        arquivoProcessado,
       )
 
       setFoto2(base64)
@@ -1842,10 +1909,8 @@ function App() {
       await salvarFormulario({
         foto2: {
           base64,
-          nome: arquivo.name,
-          tipo:
-            arquivo.type ||
-            'image/jpeg',
+          nome: arquivoProcessado.name,
+          tipo: 'image/jpeg',
         },
       })
     } catch (error) {
@@ -1866,11 +1931,12 @@ function App() {
         ''
     }
 
-    if (
-      galleryInput2Ref.current
-    ) {
-      galleryInput2Ref.current.value =
-        ''
+    if (galleryInput1Ref.current) {
+      galleryInput1Ref.current.value = ''
+    }
+
+    if (galleryInput2Ref.current) {
+      galleryInput2Ref.current.value = ''
     }
   }
 
@@ -2089,20 +2155,6 @@ function App() {
       cameraInput2Ref.current
     ) {
       cameraInput2Ref.current.value =
-        ''
-    }
-
-    if (
-      galleryInput1Ref.current
-    ) {
-      galleryInput1Ref.current.value =
-        ''
-    }
-
-    if (
-      galleryInput2Ref.current
-    ) {
-      galleryInput2Ref.current.value =
         ''
     }
   }
@@ -4019,17 +4071,14 @@ function App() {
                   onClick={abrirGaleria1}
                   disabled={enviando}
                   style={{
-                    minHeight: '46px',
-                    border: '1px solid #333',
-                    borderRadius: '10px',
-                    background: '#1a1a1a',
+                    width: '100%',
+                    padding: '11px 14px',
+                    border: '1px solid #444',
+                    borderRadius: '9px',
+                    background: '#191919',
                     color: '#fff',
-                    cursor: enviando
-                      ? 'not-allowed'
-                      : 'pointer',
+                    cursor: enviando ? 'not-allowed' : 'pointer',
                     fontWeight: 800,
-                    fontSize: '14px',
-                    marginTop: '-6px',
                   }}
                 >
                   🖼️ ESCOLHER FOTO 1 DA GALERIA
@@ -4076,17 +4125,14 @@ function App() {
                   onClick={abrirGaleria2}
                   disabled={enviando}
                   style={{
-                    minHeight: '46px',
-                    border: '1px solid #333',
-                    borderRadius: '10px',
-                    background: '#1a1a1a',
+                    width: '100%',
+                    padding: '11px 14px',
+                    border: '1px solid #444',
+                    borderRadius: '9px',
+                    background: '#191919',
                     color: '#fff',
-                    cursor: enviando
-                      ? 'not-allowed'
-                      : 'pointer',
+                    cursor: enviando ? 'not-allowed' : 'pointer',
                     fontWeight: 800,
-                    fontSize: '14px',
-                    marginTop: '-6px',
                   }}
                 >
                   🖼️ ESCOLHER FOTO 2 DA GALERIA
@@ -4133,26 +4179,23 @@ function App() {
                 )}
               </button>
 
-                <button
-                  type="button"
-                  onClick={abrirGaleria1}
-                  disabled={enviando}
-                  style={{
-                    width: '100%',
-                    minHeight: '46px',
-                    marginTop: '10px',
-                    border: '1px solid #333',
-                    borderRadius: '10px',
-                    background: '#1a1a1a',
-                    color: '#fff',
-                    cursor: enviando
-                      ? 'not-allowed'
-                      : 'pointer',
-                    fontWeight: 800,
-                    fontSize: '14px',
-                  }}
-                >
-                  🖼️ ESCOLHER FOTO DA GALERIA
+              <button
+                type="button"
+                onClick={abrirGaleria1}
+                disabled={enviando}
+                style={{
+                  width: '100%',
+                  marginTop: '10px',
+                  padding: '11px 14px',
+                  border: '1px solid #444',
+                  borderRadius: '9px',
+                  background: '#191919',
+                  color: '#fff',
+                  cursor: enviando ? 'not-allowed' : 'pointer',
+                  fontWeight: 800,
+                }}
+              >
+                🖼️ ESCOLHER FOTO DA GALERIA
                 </button>
               </>
             )}
