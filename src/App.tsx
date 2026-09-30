@@ -2748,15 +2748,75 @@ function App() {
       }
 
       const {
+        data: entradaCriada,
         error: erroEntrada,
       } = await supabase
         .from('entradas_veiculos')
         .insert(dadosEntrada)
+        .select('id')
+        .single()
 
       if (erroEntrada) {
         throw erroEntrada
       }
 
+      // =====================================================
+      // O.S. AUTOMÁTICA PARA TÉCNICO COM COMISSÃO
+      // =====================================================
+      // Somente entrada de veículo.
+      // A RPC usa o funcionario_id da entrada para preencher
+      // automaticamente o responsavel_id da O.S.
+      // A própria RPC também impede O.S. duplicada.
+      if (
+        tipoEntrada === 'veiculo' &&
+        funcionario.usa_comissao &&
+        entradaCriada?.id
+      ) {
+        const {
+          data: ordemServicoId,
+          error: erroCriacaoOS,
+        } = await supabase.rpc(
+          'criar_os_da_entrada',
+          {
+            p_entrada_id:
+              entradaCriada.id,
+          },
+        )
+
+        if (erroCriacaoOS) {
+          console.error(
+            'ERRO AO CRIAR O.S. AUTOMÁTICA:',
+            erroCriacaoOS,
+          )
+
+          alert(
+            'A entrada foi registrada, mas não foi possível criar a O.S. automaticamente.\n\nAvise o responsável do painel antes de fazer uma nova entrada.',
+          )
+
+          limparFormulario()
+          setTelaPrincipal('entrada')
+
+          return
+        }
+
+        alert(
+          `Entrada do veículo registrada!\n\nResponsável: ${funcionario.nome}\nO.S. criada automaticamente.`,
+        )
+
+        limparFormulario()
+
+        // Leva o técnico diretamente para Minhas O.S.
+        setTelaPrincipal('ordens')
+
+        console.log(
+          'O.S. criada automaticamente:',
+          ordemServicoId,
+        )
+
+        return
+      }
+
+      // Fluxo normal para peça e para funcionários sem comissão.
       alert(
         tipoEntrada === 'veiculo'
           ? `Entrada do veículo registrada!\n\nResponsável: ${funcionario.nome}`
