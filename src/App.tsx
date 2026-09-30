@@ -1,6 +1,7 @@
 ﻿import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -21,6 +22,7 @@ type TipoPeca =
 type TelaPrincipal =
   | 'entrada'
   | 'ordens'
+  | 'comissoes'
 
 type VeiculoEncontrado = {
   id: string
@@ -36,6 +38,7 @@ type FuncionarioLocal = {
   nome: string
   codigo_acesso: string
   empresa_id: string | null
+  usa_comissao: boolean
 }
 
 type DadosSalvos = {
@@ -121,6 +124,7 @@ type TarefaExistente = {
   valor_unitario: number | null
   valor_total: number | null
   ordem: number | null
+  tipo: 'servico' | 'peca' | null
 }
 
 const STORAGE_KEY =
@@ -136,6 +140,27 @@ function criarLinhaServico(): LinhaServico {
     quantidade: '1',
     valor: '',
   }
+}
+
+const SERVICOS_BASE_SUGESTAO = [
+  'Diagnóstico',
+  'Reparar e regular bomba',
+  'Reparar e regular bico',
+  'Reparar e regular unidade',
+  'Remoção e instalação de bomba',
+  'Remoção e instalação de bico',
+  'Remoção e instalação de unidade',
+]
+
+const SERVICOS_MEMORIA_STORAGE_KEY =
+  'mastertec_servicos_memoria'
+
+function normalizarTextoBusca(texto: string) {
+  return texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('pt-BR')
+    .trim()
 }
 
 function converterNumero(valor: string) {
@@ -180,6 +205,50 @@ function statusOSFechada(
   )
 }
 
+function statusEntraNaComissao(
+  status: string | null | undefined,
+) {
+  return status === 'concluida' || status === 'encerrada'
+}
+
+function obterMesAtualCuiaba() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Cuiaba',
+    year: 'numeric',
+    month: '2-digit',
+  }).format(new Date())
+}
+
+function obterMesDaDataCuiaba(
+  data: string | null | undefined,
+) {
+  if (!data) return ''
+
+  const date = new Date(data)
+
+  if (Number.isNaN(date.getTime())) return ''
+
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Cuiaba',
+    year: 'numeric',
+    month: '2-digit',
+  }).format(date)
+}
+
+function formatarMesAtual(mes: string) {
+  const [ano, numeroMes] = mes.split('-').map(Number)
+
+  if (!ano || !numeroMes) return mes
+
+  const data = new Date(Date.UTC(ano, numeroMes - 1, 1))
+
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'UTC',
+    month: 'long',
+    year: 'numeric',
+  }).format(data)
+}
+
 function App() {
   const [
     funcionario,
@@ -222,6 +291,11 @@ function App() {
   ] = useState('')
 
   const [
+    mesComissao,
+    setMesComissao,
+  ] = useState(obterMesAtualCuiaba())
+
+  const [
     ordemAberta,
     setOrdemAberta,
   ] = useState<OrdemServicoPWA | null>(null)
@@ -241,11 +315,12 @@ function App() {
     setLinhasServico,
   ] = useState<LinhaServico[]>([
     criarLinhaServico(),
-    criarLinhaServico(),
-    criarLinhaServico(),
-    criarLinhaServico(),
-    criarLinhaServico(),
   ])
+
+  const [
+    linhasPecas,
+    setLinhasPecas,
+  ] = useState<LinhaServico[]>([])
 
   const [
     finalizandoOS,
@@ -257,16 +332,20 @@ function App() {
     setTarefasOriginais,
   ] = useState<TarefaExistente[]>([])
 
+  const [
+    servicosMemoria,
+    setServicosMemoria,
+  ] = useState<string[]>([])
+
+  const [
+    indiceServicoComSugestao,
+    setIndiceServicoComSugestao,
+  ] = useState<number | null>(null)
+
   const cameraInput1Ref =
     useRef<HTMLInputElement>(null)
 
   const cameraInput2Ref =
-    useRef<HTMLInputElement>(null)
-
-  const galleryInput1Ref =
-    useRef<HTMLInputElement>(null)
-
-  const galleryInput2Ref =
     useRef<HTMLInputElement>(null)
 
   const [
@@ -361,37 +440,81 @@ function App() {
   const finalizacaoEmAndamento = useRef(false)
 
   useEffect(() => {
-    try {
-      const salvo = localStorage.getItem(
-        FUNCIONARIO_STORAGE_KEY,
-      )
+    async function restaurarFuncionario() {
+      try {
+        const salvo = localStorage.getItem(
+          FUNCIONARIO_STORAGE_KEY,
+        )
 
-      if (!salvo) {
-        return
+        if (!salvo) {
+          return
+        }
+
+        const dados =
+          JSON.parse(salvo) as Partial<FuncionarioLocal>
+
+        if (
+          dados &&
+          dados.id &&
+          dados.nome &&
+          dados.codigo_acesso
+        ) {
+          const funcionarioBase: FuncionarioLocal = {
+            id: dados.id,
+            nome: dados.nome,
+            codigo_acesso: dados.codigo_acesso,
+            empresa_id: dados.empresa_id ?? null,
+            usa_comissao: Boolean(dados.usa_comissao),
+          }
+
+          setFuncionario(funcionarioBase)
+
+          try {
+            const { data: permissao, error: erroPermissao } = await supabase.rpc(
+              'buscar_usa_comissao_por_codigo',
+              { p_codigo: dados.codigo_acesso },
+            )
+
+            if (erroPermissao) throw erroPermissao
+
+            const atualizado = {
+              ...funcionarioBase,
+              usa_comissao: Boolean(permissao),
+            }
+
+            localStorage.setItem(
+              FUNCIONARIO_STORAGE_KEY,
+              JSON.stringify(atualizado),
+            )
+            setFuncionario(atualizado)
+          } catch (erroPermissao) {
+            console.warn(
+              'Não foi possível atualizar a permissão de comissão; mantendo o estado local:',
+              erroPermissao,
+            )
+          }
+        }
+      } catch (error) {
+        console.error(
+          'ERRO AO RESTAURAR FUNCIONÁRIO:',
+          error,
+        )
+
+        localStorage.removeItem(
+          FUNCIONARIO_STORAGE_KEY,
+        )
       }
-
-      const dados =
-        JSON.parse(salvo) as FuncionarioLocal
-
-      if (
-        dados &&
-        dados.id &&
-        dados.nome &&
-        dados.codigo_acesso
-      ) {
-        setFuncionario(dados)
-      }
-    } catch (error) {
-      console.error(
-        'ERRO AO RESTAURAR FUNCIONÁRIO:',
-        error,
-      )
-
-      localStorage.removeItem(
-        FUNCIONARIO_STORAGE_KEY,
-      )
     }
+
+    void restaurarFuncionario()
   }, [])
+
+  useEffect(() => {
+    if (funcionario && !funcionario.usa_comissao && telaPrincipal !== 'entrada') {
+      setTelaPrincipal('entrada')
+      setOrdemAberta(null)
+    }
+  }, [funcionario, telaPrincipal])
 
   async function entrarComoFuncionario() {
     const codigo = codigoFuncionario
@@ -446,6 +569,20 @@ function App() {
         return
       }
 
+      const {
+        data: usaComissao,
+        error: erroPermissao,
+      } = await supabase.rpc(
+        'buscar_usa_comissao_por_codigo',
+        {
+          p_codigo: funcionarioEncontrado.codigo_acesso,
+        },
+      )
+
+      if (erroPermissao) {
+        throw erroPermissao
+      }
+
       const funcionarioLocal: FuncionarioLocal =
         {
           id: funcionarioEncontrado.id,
@@ -455,6 +592,7 @@ function App() {
           empresa_id:
             funcionarioEncontrado.empresa_id ??
             null,
+          usa_comissao: Boolean(usaComissao),
         }
 
       localStorage.setItem(
@@ -560,7 +698,8 @@ function App() {
     useCallback(async (mostrarCarregando = true) => {
       if (
         !funcionario?.id ||
-        !funcionario.codigo_acesso
+        !funcionario.codigo_acesso ||
+        !funcionario.usa_comissao
       ) {
         return
       }
@@ -725,6 +864,104 @@ function App() {
     carregarMinhasOrdens,
   ])
 
+  const mesAtual = obterMesAtualCuiaba()
+
+  const ordensVisiveis = useMemo(() => {
+    const abertas = minhasOrdens.filter(
+      ordem => !statusOSFechada(ordem.status),
+    )
+
+    const encerradasDoMes = minhasOrdens.filter(
+      ordem =>
+        statusOSFechada(ordem.status) &&
+        obterMesDaDataCuiaba(ordem.data_conclusao) === mesAtual,
+    )
+
+    const ordenarMaisRecentes = (
+      primeira: OrdemServicoPWA,
+      segunda: OrdemServicoPWA,
+      campo: 'data_entrada' | 'data_conclusao',
+    ) => {
+      const dataPrimeira = new Date(
+        primeira[campo] || 0,
+      ).getTime()
+      const dataSegunda = new Date(
+        segunda[campo] || 0,
+      ).getTime()
+
+      return dataSegunda - dataPrimeira
+    }
+
+    abertas.sort((a, b) =>
+      ordenarMaisRecentes(a, b, 'data_entrada'),
+    )
+
+    encerradasDoMes.sort((a, b) =>
+      ordenarMaisRecentes(a, b, 'data_conclusao'),
+    )
+
+    return [...abertas, ...encerradasDoMes]
+  }, [minhasOrdens, mesAtual])
+
+  const comissoesDoMes = minhasOrdens.filter(ordem =>
+    statusEntraNaComissao(ordem.status) &&
+    obterMesDaDataCuiaba(ordem.data_conclusao) === mesComissao,
+  )
+
+  const resumoMinhasComissoes = useMemo(() => {
+    const clientesMap = new Map<
+      string,
+      {
+        nome: string
+        ordens: number
+        servicos: number
+        valorServicos: number
+        comissao: number
+      }
+    >()
+
+    let totalServicos = 0
+    let totalComissao = 0
+
+    for (const ordem of comissoesDoMes) {
+      const cliente =
+        ordem.cliente_nome?.trim() || 'Cliente não informado'
+      const chave = cliente.toLocaleLowerCase('pt-BR')
+
+      const valorServicos = Number(ordem.valor_servicos ?? 0)
+      const valorComissao = Number(ordem.valor_comissao ?? 0)
+
+      totalServicos += valorServicos
+      totalComissao += valorComissao
+
+      const atual = clientesMap.get(chave)
+
+      if (atual) {
+        atual.ordens += 1
+        atual.servicos += valorServicos > 0 ? 1 : 0
+        atual.valorServicos += valorServicos
+        atual.comissao += valorComissao
+      } else {
+        clientesMap.set(chave, {
+          nome: cliente,
+          ordens: 1,
+          servicos: valorServicos > 0 ? 1 : 0,
+          valorServicos,
+          comissao: valorComissao,
+        })
+      }
+    }
+
+    return {
+      ordens: comissoesDoMes.length,
+      clientes: Array.from(clientesMap.values()).sort((a, b) =>
+        a.nome.localeCompare(b.nome, 'pt-BR'),
+      ),
+      totalServicos,
+      totalComissao,
+    }
+  }, [comissoesDoMes])
+
   async function buscarOrdemAtualPorCodigo(
     ordemId: string,
   ): Promise<OrdemServicoPWA | null> {
@@ -835,6 +1072,9 @@ function App() {
   async function abrirMinhaOS(
     ordem: OrdemServicoPWA,
   ) {
+    if (!funcionario?.usa_comissao) {
+      return
+    }
     try {
       setCarregandoDetalhesOS(true)
       setErroOrdens('')
@@ -894,7 +1134,8 @@ function App() {
             quantidade,
             valor_unitario,
             valor_total,
-            ordem
+            ordem,
+            tipo
           `,
           )
           .eq(
@@ -931,46 +1172,53 @@ function App() {
 
       setTarefasOriginais(tarefas)
 
-      if (tarefas.length > 0) {
-        const linhasExistentes =
-          tarefas.map(tarefa => ({
-            id: tarefa.id,
-            descricao:
-              tarefa.descricao?.trim() ||
-              tarefa.titulo?.trim() ||
-              '',
-            quantidade: String(
-              tarefa.quantidade ?? 1,
-            ),
-            valor: Number(
-              tarefa.valor_unitario ??
-                tarefa.valor_total ??
-                0,
-            )
-              .toFixed(2)
-              .replace('.', ','),
-          }))
-
-        if (
-          !statusOSFechada(ordemParaAbrir.status)
-        ) {
-          linhasExistentes.push(
-            criarLinhaServico(),
-          )
-        }
-
-        setLinhasServico(
-          linhasExistentes,
+      const converterTarefaParaLinha = (
+        tarefa: TarefaExistente,
+      ): LinhaServico => ({
+        id: tarefa.id,
+        descricao:
+          tarefa.descricao?.trim() ||
+          tarefa.titulo?.trim() ||
+          '',
+        quantidade: String(
+          tarefa.quantidade ?? 1,
+        ),
+        valor: Number(
+          tarefa.valor_unitario ??
+            tarefa.valor_total ??
+            0,
         )
-      } else {
-        setLinhasServico([
+          .toFixed(2)
+          .replace('.', ','),
+      })
+
+      const servicosExistentes = tarefas
+        .filter(tarefa => tarefa.tipo !== 'peca')
+        .map(converterTarefaParaLinha)
+
+      const pecasExistentes = tarefas
+        .filter(tarefa => tarefa.tipo === 'peca')
+        .map(converterTarefaParaLinha)
+
+      if (servicosExistentes.length === 0) {
+        servicosExistentes.push(
           criarLinhaServico(),
+        )
+      } else if (
+        !statusOSFechada(ordemParaAbrir.status)
+      ) {
+        servicosExistentes.push(
           criarLinhaServico(),
-          criarLinhaServico(),
-          criarLinhaServico(),
-          criarLinhaServico(),
-        ])
+        )
       }
+
+      setLinhasServico(
+        servicosExistentes,
+      )
+
+      setLinhasPecas(
+        pecasExistentes,
+      )
     } catch (error: any) {
       console.error(
         'ERRO AO ABRIR OS:',
@@ -984,11 +1232,9 @@ function App() {
 
       setLinhasServico([
         criarLinhaServico(),
-        criarLinhaServico(),
-        criarLinhaServico(),
-        criarLinhaServico(),
-        criarLinhaServico(),
       ])
+
+      setLinhasPecas([])
     } finally {
       setCarregandoDetalhesOS(false)
     }
@@ -998,18 +1244,163 @@ function App() {
     !!ordemAberta &&
     !statusOSFechada(ordemAberta.status)
 
-  function adicionarLinhaServico() {
+  useEffect(() => {
+    try {
+      const salvo = localStorage.getItem(
+        SERVICOS_MEMORIA_STORAGE_KEY,
+      )
+
+      if (!salvo) {
+        return
+      }
+
+      const lista = JSON.parse(salvo)
+
+      if (!Array.isArray(lista)) {
+        return
+      }
+
+      const limpa = lista
+        .filter(
+          item =>
+            typeof item === 'string' &&
+            item.trim().length > 0,
+        )
+        .map(item => item.trim())
+
+      setServicosMemoria(limpa)
+    } catch (error) {
+      console.warn(
+        'Não foi possível carregar a memória de serviços:',
+        error,
+      )
+    }
+  }, [])
+
+  function listaCompletaDeServicos() {
+    const nomes = [
+      ...SERVICOS_BASE_SUGESTAO,
+      ...servicosMemoria,
+    ]
+
+    const vistos = new Set<string>()
+    const resultado: string[] = []
+
+    for (const nome of nomes) {
+      const texto = String(nome || '').trim()
+      const chave = normalizarTextoBusca(texto)
+
+      if (!texto || vistos.has(chave)) {
+        continue
+      }
+
+      vistos.add(chave)
+      resultado.push(texto)
+    }
+
+    return resultado
+  }
+
+  function obterSugestoesServico(
+    texto: string,
+  ) {
+    const busca = normalizarTextoBusca(texto)
+
+    if (!busca) {
+      return []
+    }
+
+    return listaCompletaDeServicos()
+      .filter(item => {
+        const nome = normalizarTextoBusca(item)
+        return nome.includes(busca)
+      })
+      .sort((a, b) => {
+        const nomeA = normalizarTextoBusca(a)
+        const nomeB = normalizarTextoBusca(b)
+        const comecaA = nomeA.startsWith(busca)
+        const comecaB = nomeB.startsWith(busca)
+
+        if (comecaA !== comecaB) {
+          return comecaA ? -1 : 1
+        }
+
+        return a.localeCompare(b, 'pt-BR')
+      })
+      .slice(0, 7)
+  }
+
+  function memorizarServico(descricao: string) {
+    const texto = descricao.trim()
+
+    if (!texto) {
+      return
+    }
+
+    setServicosMemoria(anterior => {
+      const existente = anterior.some(
+        item =>
+          normalizarTextoBusca(item) ===
+          normalizarTextoBusca(texto),
+      )
+
+      const novaLista = existente
+        ? anterior
+        : [texto, ...anterior].slice(0, 80)
+
+      try {
+        localStorage.setItem(
+          SERVICOS_MEMORIA_STORAGE_KEY,
+          JSON.stringify(novaLista),
+        )
+      } catch (error) {
+        console.warn(
+          'Não foi possível salvar a memória de serviços:',
+          error,
+        )
+      }
+
+      return novaLista
+    })
+  }
+
+  function selecionarSugestaoServico(
+    index: number,
+    descricao: string,
+  ) {
+    atualizarLinha(
+      'servico',
+      index,
+      'descricao',
+      descricao,
+    )
+    memorizarServico(descricao)
+    setIndiceServicoComSugestao(null)
+  }
+
+  function adicionarLinha(
+    tipo: 'servico' | 'peca',
+  ) {
     if (!osEditavel) {
       return
     }
 
-    setLinhasServico(anterior => [
+    if (tipo === 'servico') {
+      setLinhasServico(anterior => [
+        ...anterior,
+        criarLinhaServico(),
+      ])
+      return
+    }
+
+    setLinhasPecas(anterior => [
       ...anterior,
       criarLinhaServico(),
     ])
   }
 
-  function atualizarLinhaServico(
+  function atualizarLinha(
+    tipo: 'servico' | 'peca',
     index: number,
     campo:
       | 'descricao'
@@ -1021,7 +1412,12 @@ function App() {
       return
     }
 
-    setLinhasServico(anterior => {
+    const setter =
+      tipo === 'servico'
+        ? setLinhasServico
+        : setLinhasPecas
+
+    setter(anterior => {
       const novas = [...anterior]
 
       novas[index] = {
@@ -1033,8 +1429,10 @@ function App() {
     })
   }
 
-  const totalOrdemAberta =
-    linhasServico.reduce(
+  function totalDasLinhas(
+    linhas: LinhaServico[],
+  ) {
+    return linhas.reduce(
       (total, linha) => {
         const quantidade =
           converterNumero(
@@ -1044,13 +1442,20 @@ function App() {
         const valor =
           converterNumero(linha.valor)
 
-        return (
-          total +
-          quantidade * valor
-        )
+        return total + quantidade * valor
       },
       0,
     )
+  }
+
+  const totalServicos =
+    totalDasLinhas(linhasServico)
+
+  const totalPecas =
+    totalDasLinhas(linhasPecas)
+
+  const totalOrdemAberta =
+    totalServicos + totalPecas
 
   async function finalizarEnviarOS() {
     if (
@@ -1104,36 +1509,45 @@ function App() {
       // Usa o estado recém-consultado como fonte da verdade.
       setOrdemAberta(ordemAtual)
 
-      const linhasPreenchidas =
-        linhasServico
-          .map((linha, index) => {
-            const quantidade =
-              converterNumero(
-                linha.quantidade,
-              )
+      const linhasPreenchidas = [
+        ...linhasServico.map(linha => ({
+          ...linha,
+          tipo: 'servico' as const,
+        })),
+        ...linhasPecas.map(linha => ({
+          ...linha,
+          tipo: 'peca' as const,
+        })),
+      ]
+        .map((linha, index) => {
+          const quantidade =
+            converterNumero(
+              linha.quantidade,
+            )
 
-            const valor =
-              converterNumero(linha.valor)
+          const valor =
+            converterNumero(linha.valor)
 
-            return {
-              ...linha,
-              index,
-              descricao:
-                linha.descricao.trim(),
-              quantidadeNumero:
-                quantidade > 0
-                  ? quantidade
-                  : 1,
-              valorNumero: valor,
-            }
-          })
-          .filter(
-            linha =>
-              linha.descricao ||
-              linha.valorNumero > 0,
-          )
+          return {
+            ...linha,
+            index,
+            descricao:
+              linha.descricao.trim(),
+            quantidadeNumero:
+              quantidade > 0
+                ? quantidade
+                : 1,
+            valorNumero: valor,
+          }
+        })
+        .filter(
+          linha =>
+            linha.descricao ||
+            linha.valorNumero > 0,
+        )
 
-      let total = 0
+      let totalServicosSalvo = 0
+      let totalPecasSalvo = 0
 
       const idsMantidos =
         new Set<string>()
@@ -1155,7 +1569,11 @@ function App() {
         const valorTotal =
           quantidade * valor
 
-        total += valorTotal
+        if (linha.tipo === 'servico') {
+          totalServicosSalvo += valorTotal
+        } else {
+          totalPecasSalvo += valorTotal
+        }
 
         if (linha.id) {
           idsMantidos.add(
@@ -1170,10 +1588,13 @@ function App() {
                   funcionario.id,
                 titulo:
                   linha.descricao ||
-                  'Serviço / Peça',
+                  (linha.tipo === 'peca'
+                    ? 'Peça / Produto'
+                    : 'Serviço'),
                 descricao:
                   linha.descricao ||
                   null,
+                tipo: linha.tipo,
                 quantidade,
                 valor_unitario:
                   valor,
@@ -1212,11 +1633,13 @@ function App() {
                 funcionario.id,
               titulo:
                 linha.descricao ||
-                'Serviço / Peça',
+                (linha.tipo === 'peca'
+                  ? 'Peça / Produto'
+                  : 'Serviço'),
               descricao:
                 linha.descricao ||
                 null,
-              tipo: 'servico',
+              tipo: linha.tipo,
               status: 'concluida',
               prioridade: 'normal',
               ordem: i + 1,
@@ -1288,9 +1711,10 @@ function App() {
             status: 'servico_finalizado',
             responsavel_id:
               funcionario.id,
-            valor_servicos: total,
-            valor_pecas: 0,
-            valor_total: total,
+            valor_servicos: totalServicosSalvo,
+            valor_pecas: totalPecasSalvo,
+            valor_total:
+              totalServicosSalvo + totalPecasSalvo,
             data_conclusao: agora,
             updated_at: agora,
           })
@@ -1309,9 +1733,10 @@ function App() {
         status: 'servico_finalizado',
         responsavel_id:
           funcionario.id,
-        valor_servicos: total,
-        valor_pecas: 0,
-        valor_total: total,
+        valor_servicos: totalServicosSalvo,
+        valor_pecas: totalPecasSalvo,
+        valor_total:
+          totalServicosSalvo + totalPecasSalvo,
         data_conclusao: agora,
         updated_at: agora,
       }
@@ -1325,9 +1750,10 @@ function App() {
                   'servico_finalizado',
                 responsavel_id:
                   funcionario.id,
-                valor_servicos: total,
-                valor_pecas: 0,
-                valor_total: total,
+                valor_servicos: totalServicosSalvo,
+                valor_pecas: totalPecasSalvo,
+                valor_total:
+                  totalServicosSalvo + totalPecasSalvo,
                 data_conclusao:
                   agora,
                 updated_at: agora,
@@ -1337,6 +1763,12 @@ function App() {
       )
 
       await abrirMinhaOS(osAtualizada)
+
+      for (const linha of linhasPreenchidas) {
+        if (linha.tipo === 'servico' && linha.descricao) {
+          memorizarServico(linha.descricao)
+        }
+      }
 
       alert(
         'O.S. finalizada e enviada com sucesso!',
@@ -1398,72 +1830,6 @@ function App() {
         currency: 'BRL',
       },
     ).format(numero)
-  }
-
-  async function prepararFotoParaUpload(
-    arquivo: File,
-  ): Promise<File> {
-    if (
-      arquivo.type === 'image/jpeg' &&
-      arquivo.name.toLowerCase().endsWith('.jpg')
-    ) {
-      return arquivo
-    }
-
-    const url = URL.createObjectURL(arquivo)
-
-    try {
-      const imagem = new Image()
-
-      imagem.decoding = 'async'
-      imagem.src = url
-
-      await new Promise<void>((resolve, reject) => {
-        imagem.onload = () => resolve()
-        imagem.onerror = () =>
-          reject(new Error('Não foi possível processar a imagem.'))
-      })
-
-      const maxLado = 1600
-      const escala = Math.min(1, maxLado / Math.max(imagem.naturalWidth, imagem.naturalHeight))
-      const largura = Math.max(1, Math.round(imagem.naturalWidth * escala))
-      const altura = Math.max(1, Math.round(imagem.naturalHeight * escala))
-
-      const canvas = document.createElement('canvas')
-      canvas.width = largura
-      canvas.height = altura
-
-      const contexto = canvas.getContext('2d')
-
-      if (!contexto) {
-        throw new Error('Não foi possível preparar a imagem.')
-      }
-
-      contexto.drawImage(imagem, 0, 0, largura, altura)
-
-      const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, 'image/jpeg', 0.82),
-      )
-
-      if (!blob) {
-        throw new Error('Não foi possível converter a imagem para JPEG.')
-      }
-
-      const nomeBase =
-        arquivo.name.replace(/\.[^.]+$/, '') ||
-        'foto'
-
-      return new File(
-        [blob],
-        `${nomeBase}.jpg`,
-        {
-          type: 'image/jpeg',
-          lastModified: Date.now(),
-        },
-      )
-    } finally {
-      URL.revokeObjectURL(url)
-    }
   }
 
   function arquivoParaBase64(
@@ -1810,22 +2176,6 @@ function App() {
     cameraInput2Ref.current?.click()
   }
 
-  function abrirGaleria1() {
-    if (enviando) {
-      return
-    }
-
-    galleryInput1Ref.current?.click()
-  }
-
-  function abrirGaleria2() {
-    if (enviando) {
-      return
-    }
-
-    galleryInput2Ref.current?.click()
-  }
-
   async function selecionarFoto1(
     event: ChangeEvent<HTMLInputElement>,
   ) {
@@ -1837,16 +2187,13 @@ function App() {
     }
 
     try {
-      const arquivoProcessado =
-        await prepararFotoParaUpload(arquivo)
-
       const base64 =
         await arquivoParaBase64(
-          arquivoProcessado,
+          arquivo,
         )
 
       setArquivoFoto1(
-        arquivoProcessado,
+        arquivo,
       )
 
       setFoto1(base64)
@@ -1854,8 +2201,10 @@ function App() {
       await salvarFormulario({
         foto1: {
           base64,
-          nome: arquivoProcessado.name,
-          tipo: 'image/jpeg',
+          nome: arquivo.name,
+          tipo:
+            arquivo.type ||
+            'image/jpeg',
         },
       })
     } catch (error) {
@@ -1875,10 +2224,6 @@ function App() {
       cameraInput1Ref.current.value =
         ''
     }
-
-    if (galleryInput1Ref.current) {
-      galleryInput1Ref.current.value = ''
-    }
   }
 
   async function selecionarFoto2(
@@ -1892,16 +2237,13 @@ function App() {
     }
 
     try {
-      const arquivoProcessado =
-        await prepararFotoParaUpload(arquivo)
-
       const base64 =
         await arquivoParaBase64(
-          arquivoProcessado,
+          arquivo,
         )
 
       setArquivoFoto2(
-        arquivoProcessado,
+        arquivo,
       )
 
       setFoto2(base64)
@@ -1909,8 +2251,10 @@ function App() {
       await salvarFormulario({
         foto2: {
           base64,
-          nome: arquivoProcessado.name,
-          tipo: 'image/jpeg',
+          nome: arquivo.name,
+          tipo:
+            arquivo.type ||
+            'image/jpeg',
         },
       })
     } catch (error) {
@@ -1929,14 +2273,6 @@ function App() {
     ) {
       cameraInput2Ref.current.value =
         ''
-    }
-
-    if (galleryInput1Ref.current) {
-      galleryInput1Ref.current.value = ''
-    }
-
-    if (galleryInput2Ref.current) {
-      galleryInput2Ref.current.value = ''
     }
   }
 
@@ -2830,6 +3166,7 @@ function App() {
               🚚 NOVA ENTRADA
             </button>
 
+            {funcionario.usa_comissao && (
             <button
               type="button"
               onClick={() =>
@@ -2859,10 +3196,44 @@ function App() {
             >
               🛠️ MINHAS O.S.
             </button>
+            )}
+
+            {funcionario.usa_comissao && (
+            <button
+              type="button"
+              onClick={() =>
+                setTelaPrincipal(
+                  'comissoes',
+                )
+              }
+              style={{
+                width: '100%',
+                minWidth: 0,
+                padding: '11px 8px',
+                border:
+                  telaPrincipal ===
+                  'comissoes'
+                    ? '2px solid #22c55e'
+                    : '1px solid #444',
+                borderRadius: '10px',
+                background:
+                  telaPrincipal ===
+                  'comissoes'
+                    ? 'rgba(34,197,94,0.14)'
+                    : '#181818',
+                color: '#fff',
+                fontWeight: 900,
+                cursor: 'pointer',
+                gridColumn: '1 / -1',
+              }}
+            >
+              💰 MINHAS COMISSÕES
+            </button>
+            )}
           </div>
         </header>
 
-        {telaPrincipal ===
+        {funcionario.usa_comissao && telaPrincipal ===
           'ordens' && (
           <section
             className="card"
@@ -2903,7 +3274,7 @@ function App() {
                     <p
                       className="description"
                       style={{
-                        marginBottom: 0,
+                        marginBottom: '4px',
                       }}
                     >
                       O.S. atribuídas a{' '}
@@ -2915,6 +3286,17 @@ function App() {
                         {funcionario.nome}
                       </strong>
                     </p>
+
+                    <div
+                      style={{
+                        color: '#72dc7d',
+                        fontSize: '10px',
+                        fontWeight: 800,
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      MÊS ATUAL: {formatarMesAtual(mesAtual)}
+                    </div>
                   </div>
 
                   <button
@@ -2978,7 +3360,7 @@ function App() {
                   >
                     Carregando suas O.S....
                   </div>
-                ) : minhasOrdens.length ===
+                ) : ordensVisiveis.length ===
                   0 ? (
                   <div
                     style={{
@@ -3010,7 +3392,7 @@ function App() {
                           '6px',
                       }}
                     >
-                      Nenhuma O.S. atribuída
+                      Nenhuma O.S. do mês atual
                     </h3>
 
                     <p
@@ -3019,9 +3401,10 @@ function App() {
                         margin: 0,
                       }}
                     >
-                      Quando uma O.S. for
-                      atribuída a você, ela
-                      aparecerá aqui.
+                      O.S. em andamento continuam
+                      aparecendo. O.S. encerradas de
+                      meses anteriores ficam no histórico
+                      de Minhas Comissões.
                     </p>
                   </div>
                 ) : (
@@ -3033,7 +3416,7 @@ function App() {
                       width: '100%',
                     }}
                   >
-                    {minhasOrdens.map(
+                    {ordensVisiveis.map(
                       ordem => {
                         const encerrada =
                           statusOSFechada(
@@ -3166,19 +3549,54 @@ function App() {
                             {encerrada && (
                               <div
                                 style={{
-                                  marginTop:
-                                    '7px',
-                                  color:
-                                    '#70d77c',
-                                  fontSize:
-                                    '11px',
-                                  fontWeight:
-                                    700,
+                                  marginTop: '9px',
+                                  display: 'flex',
+                                  alignItems: 'flex-end',
+                                  justifyContent: 'space-between',
+                                  gap: '10px',
                                 }}
                               >
-                                Toque para
-                                visualizar o
-                                histórico.
+                                <div
+                                  style={{
+                                    color: '#70d77c',
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    lineHeight: 1.35,
+                                    minWidth: 0,
+                                  }}
+                                >
+                                  Toque para visualizar o histórico.
+                                </div>
+
+                                <div
+                                  style={{
+                                    flexShrink: 0,
+                                    textAlign: 'right',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      color: '#777',
+                                      fontSize: '8px',
+                                      fontWeight: 900,
+                                      letterSpacing: 0.4,
+                                    }}
+                                  >
+                                    COMISSÃO
+                                  </div>
+
+                                  <div
+                                    style={{
+                                      marginTop: '2px',
+                                      color: '#74e889',
+                                      fontSize: '13px',
+                                      fontWeight: 900,
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    💰 {formatarMoeda(ordem.valor_comissao)}
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </button>
@@ -3522,338 +3940,504 @@ function App() {
                             '#fff',
                         }}
                       >
-                        DESCRIÇÃO DE SERVIÇOS E PEÇAS
+                        SERVIÇOS E PEÇAS
                       </h3>
-
-                      <div className="mastertec-os-cabecalho">
-                        <div
-                          style={{
-                            color:
-                              '#777',
-                            fontSize:
-                              '10px',
-                            fontWeight:
-                              800,
-                          }}
-                        >
-                          DESCRIÇÃO
-                        </div>
-
-                        <div
-                          style={{
-                            color:
-                              '#777',
-                            fontSize:
-                              '10px',
-                            fontWeight:
-                              800,
-                            textAlign:
-                              'center',
-                          }}
-                        >
-                          QTD.
-                        </div>
-
-                        <div
-                          style={{
-                            color:
-                              '#777',
-                            fontSize:
-                              '10px',
-                            fontWeight:
-                              800,
-                            textAlign:
-                              'right',
-                          }}
-                        >
-                          PREÇO
-                        </div>
-                      </div>
 
                       <div
                         style={{
-                          display:
-                            'grid',
-                          gap: '8px',
-                          marginTop:
-                            '6px',
-                          width: '100%',
-                          maxWidth:
-                            '100%',
+                          padding: '14px',
+                          border: '1px solid #303030',
+                          borderRadius: '10px',
+                          background: '#111',
                         }}
                       >
-                        {linhasServico.map(
-                          (
-                            linha,
-                            index,
-                          ) => {
-                            const quantidade =
-                              converterNumero(
-                                linha.quantidade,
-                              ) || 1
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '10px',
+                            flexWrap: 'wrap',
+                            marginBottom: '10px',
+                          }}
+                        >
+                          <div>
+                            <div
+                              style={{
+                                color: '#fff',
+                                fontSize: '15px',
+                                fontWeight: 900,
+                              }}
+                            >
+                              🔧 SERVIÇOS
+                            </div>
+                            <div
+                              style={{
+                                color: '#777',
+                                fontSize: '11px',
+                                marginTop: '3px',
+                              }}
+                            >
+                              Tudo que for mão de obra ou serviço.
+                            </div>
+                          </div>
 
-                            const valor =
-                              converterNumero(
-                                linha.valor,
-                              )
+                          <div
+                            style={{
+                              color: '#fff',
+                              fontSize: '14px',
+                              fontWeight: 900,
+                            }}
+                          >
+                            {formatarMoedaNumero(totalServicos)}
+                          </div>
+                        </div>
 
-                            const totalLinha =
-                              quantidade *
-                              valor
+                        <div className="mastertec-os-cabecalho">
+                          <div style={{ color: '#777', fontSize: '10px', fontWeight: 800 }}>
+                            DESCRIÇÃO DO SERVIÇO
+                          </div>
+                          <div style={{ color: '#777', fontSize: '10px', fontWeight: 800, textAlign: 'center' }}>
+                            QTD.
+                          </div>
+                          <div style={{ color: '#777', fontSize: '10px', fontWeight: 800, textAlign: 'right' }}>
+                            PREÇO
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            display: 'grid',
+                            gap: '8px',
+                            marginTop: '6px',
+                            width: '100%',
+                          }}
+                        >
+                          {linhasServico.map((linha, index) => {
+                            const quantidade = converterNumero(linha.quantidade) || 1
+                            const valor = converterNumero(linha.valor)
+                            const totalLinha = quantidade * valor
 
                             return (
                               <div
-                                key={
-                                  linha.id ||
-                                  `linha-${index}`
-                                }
+                                key={linha.id || `servico-${index}`}
                                 className="mastertec-os-linha"
                               >
-                                <input
-                                  type="text"
-                                  value={
-                                    linha.descricao
-                                  }
-                                  onChange={event =>
-                                    atualizarLinhaServico(
-                                      index,
-                                      'descricao',
-                                      event.target
-                                        .value,
-                                    )
-                                  }
-                                  placeholder={
-                                    osEditavel
-                                      ? 'Descrição do serviço ou peça'
-                                      : '-'
-                                  }
-                                  disabled={
-                                    !osEditavel ||
-                                    finalizandoOS
-                                  }
-                                  autoCorrect="off"
-                                  spellCheck={
-                                    false
-                                  }
-                                  autoCapitalize="sentences"
-                                  style={{
-                                    minWidth:
-                                      0,
-                                    width:
-                                      '100%',
-                                    maxWidth:
-                                      '100%',
-                                  }}
-                                />
-
                                 <div
-                                  className="mastertec-mobile-field"
                                   style={{
-                                    minWidth:
-                                      0,
+                                    position: 'relative',
+                                    gridColumn: '1 / -1',
+                                    width: '100%',
+                                    minWidth: 0,
+                                    zIndex:
+                                      indiceServicoComSugestao === index
+                                        ? 50
+                                        : 1,
                                   }}
                                 >
-                                  <div className="mastertec-label-mobile">
-                                    QUANTIDADE
-                                  </div>
-
                                   <input
                                     type="text"
-                                    inputMode="decimal"
-                                    value={
-                                      linha.quantidade
+                                    value={linha.descricao}
+                                    onFocus={() =>
+                                      setIndiceServicoComSugestao(index)
                                     }
-                                    onChange={event =>
-                                      atualizarLinhaServico(
+                                    onChange={event => {
+                                      atualizarLinha(
+                                        'servico',
                                         index,
-                                        'quantidade',
-                                        event.target
-                                          .value,
+                                        'descricao',
+                                        event.target.value,
                                       )
+                                      setIndiceServicoComSugestao(index)
+                                    }}
+                                    onKeyDown={event => {
+                                      if (event.key === 'Escape') {
+                                        setIndiceServicoComSugestao(null)
+                                      }
+
+                                      if (event.key === 'Enter') {
+                                        const sugestoes = obterSugestoesServico(
+                                          linha.descricao,
+                                        )
+
+                                        if (sugestoes.length > 0) {
+                                          event.preventDefault()
+                                          selecionarSugestaoServico(
+                                            index,
+                                            sugestoes[0],
+                                          )
+                                        }
+                                      }
+                                    }}
+                                    onBlur={() => {
+                                      window.setTimeout(() => {
+                                        setIndiceServicoComSugestao(atual =>
+                                          atual === index ? null : atual,
+                                        )
+                                      }, 180)
+                                    }}
+                                    placeholder={
+                                      osEditavel
+                                        ? 'Digite o serviço e escolha uma sugestão'
+                                        : '-'
                                     }
-                                    placeholder="1"
                                     disabled={
                                       !osEditavel ||
                                       finalizandoOS
                                     }
+                                    autoCorrect="off"
+                                    spellCheck={false}
+                                    autoCapitalize="sentences"
                                     style={{
-                                      width:
-                                        '100%',
-                                      maxWidth:
-                                        '100%',
-                                      minWidth:
-                                        0,
-                                      textAlign:
-                                        'center',
+                                      minWidth: 0,
+                                      width: '100%',
+                                      maxWidth: '100%',
+                                      boxSizing: 'border-box',
                                     }}
+                                  />
+
+                                  {osEditavel &&
+                                    !finalizandoOS &&
+                                    indiceServicoComSugestao === index &&
+                                    obterSugestoesServico(linha.descricao).length > 0 && (
+                                      <div
+                                        style={{
+                                          position: 'absolute',
+                                          top: 'calc(100% + 4px)',
+                                          left: 0,
+                                          right: 0,
+                                          width: '100%',
+                                          maxHeight: '230px',
+                                          overflowY: 'auto',
+                                          background: '#101010',
+                                          border: '1px solid #3a3a3a',
+                                          borderRadius: '10px',
+                                          boxShadow: '0 12px 28px rgba(0,0,0,0.45)',
+                                          padding: '5px',
+                                        }}
+                                      >
+                                        {obterSugestoesServico(linha.descricao).map(
+                                          sugestao => (
+                                            <button
+                                              key={sugestao}
+                                              type="button"
+                                              onMouseDown={event =>
+                                                event.preventDefault()
+                                              }
+                                              onPointerDown={event => {
+                                                event.preventDefault()
+                                                selecionarSugestaoServico(
+                                                  index,
+                                                  sugestao,
+                                                )
+                                              }}
+                                              style={{
+                                                display: 'block',
+                                                width: '100%',
+                                                textAlign: 'left',
+                                                border: '0',
+                                                borderRadius: '8px',
+                                                padding: '11px 12px',
+                                                background: 'transparent',
+                                                color: '#fff',
+                                                cursor: 'pointer',
+                                                fontSize: '13px',
+                                                fontWeight: 700,
+                                              }}
+                                            >
+                                              {sugestao}
+                                            </button>
+                                          ),
+                                        )}
+                                      </div>
+                                    )}
+                                </div>
+
+                                <div className="mastertec-mobile-field" style={{ minWidth: 0 }}>
+                                  <div className="mastertec-label-mobile">QUANTIDADE</div>
+                                  <input
+                                    type="text"
+                                    inputMode="decimal"
+                                    value={linha.quantidade}
+                                    onChange={event =>
+                                      atualizarLinha('servico', index, 'quantidade', event.target.value)
+                                    }
+                                    placeholder="1"
+                                    disabled={!osEditavel || finalizandoOS}
+                                    style={{ width: '100%', maxWidth: '100%', minWidth: 0, textAlign: 'center' }}
                                   />
                                 </div>
 
-                                <div
-                                  className="mastertec-mobile-field"
-                                  style={{
-                                    minWidth:
-                                      0,
-                                  }}
-                                >
-                                  <div className="mastertec-label-mobile">
-                                    PREÇO
-                                  </div>
-
+                                <div className="mastertec-mobile-field" style={{ minWidth: 0 }}>
+                                  <div className="mastertec-label-mobile">PREÇO</div>
                                   <input
                                     type="text"
                                     inputMode="decimal"
-                                    value={
-                                      linha.valor
-                                    }
+                                    value={linha.valor}
                                     onChange={event =>
-                                      atualizarLinhaServico(
-                                        index,
-                                        'valor',
-                                        event.target
-                                          .value,
-                                      )
+                                      atualizarLinha('servico', index, 'valor', event.target.value)
                                     }
                                     placeholder="R$ 0,00"
-                                    disabled={
-                                      !osEditavel ||
-                                      finalizandoOS
-                                    }
-                                    style={{
-                                      width:
-                                        '100%',
-                                      maxWidth:
-                                        '100%',
-                                      minWidth:
-                                        0,
-                                      textAlign:
-                                        'right',
-                                    }}
+                                    disabled={!osEditavel || finalizandoOS}
+                                    style={{ width: '100%', maxWidth: '100%', minWidth: 0, textAlign: 'right' }}
                                   />
                                 </div>
 
                                 <div
                                   className="mastertec-os-total-linha"
-                                  style={{
-                                    color:
-                                      '#999',
-                                    fontSize:
-                                      '11px',
-                                    fontWeight:
-                                      700,
-                                    textAlign:
-                                      'right',
-                                  }}
+                                  style={{ color: '#999', fontSize: '11px', fontWeight: 700, textAlign: 'right' }}
                                 >
-                                  Total da linha:{' '}
-                                  {formatarMoedaNumero(
-                                    totalLinha,
-                                  )}
+                                  Total: {formatarMoedaNumero(totalLinha)}
                                 </div>
                               </div>
                             )
-                          },
+                          })}
+                        </div>
+
+                        {osEditavel && (
+                          <button
+                            type="button"
+                            onClick={() => adicionarLinha('servico')}
+                            disabled={finalizandoOS}
+                            style={{
+                              width: '100%',
+                              marginTop: '12px',
+                              padding: '12px',
+                              border: '1px dashed #555',
+                              borderRadius: '8px',
+                              background: '#181818',
+                              color: '#fff',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            + ADICIONAR SERVIÇO
+                          </button>
                         )}
                       </div>
 
-                      {osEditavel && (
-                        <button
-                          type="button"
-                          onClick={
-                            adicionarLinhaServico
-                          }
-                          disabled={
-                            finalizandoOS
-                          }
-                          style={{
-                            width:
-                              '100%',
-                            maxWidth:
-                              '100%',
-                            marginTop:
-                              '12px',
-                            padding:
-                              '12px',
-                            border:
-                              '1px dashed #555',
-                            borderRadius:
-                              '8px',
-                            background:
-                              '#181818',
-                            color:
-                              '#fff',
-                            fontWeight:
-                              800,
-                            cursor:
-                              'pointer',
-                          }}
-                        >
-                          + ADICIONAR LINHA
-                        </button>
-                      )}
-
                       <div
                         style={{
-                          marginTop:
-                            '18px',
-                          paddingTop:
-                            '15px',
-                          borderTop:
-                            '1px solid #333',
-                          display:
-                            'flex',
-                          justifyContent:
-                            'flex-end',
-                          width:
-                            '100%',
+                          marginTop: '14px',
+                          padding: '14px',
+                          border: '1px solid #303030',
+                          borderRadius: '10px',
+                          background: '#111',
                         }}
                       >
                         <div
                           style={{
-                            width:
-                              '100%',
-                            maxWidth:
-                              '260px',
-                            color:
-                              '#fff',
-                            textAlign:
-                              'right',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            gap: '10px',
+                            flexWrap: 'wrap',
+                            marginBottom: '10px',
                           }}
                         >
-                          <div
-                            style={{
-                              color:
-                                '#777',
-                              fontSize:
-                                '10px',
-                              fontWeight:
-                                800,
-                              marginBottom:
-                                '4px',
-                            }}
-                          >
-                            TOTAL DA O.S.
+                          <div>
+                            <div
+                              style={{
+                                color: '#fff',
+                                fontSize: '15px',
+                                fontWeight: 900,
+                              }}
+                            >
+                              📦 PEÇAS / PRODUTOS
+                            </div>
+                            <div
+                              style={{
+                                color: '#777',
+                                fontSize: '11px',
+                                marginTop: '3px',
+                              }}
+                            >
+                              Peças, produtos, materiais e combustíveis. Não geram comissão.
+                            </div>
                           </div>
 
-                          <div
+                          <button
+                            type="button"
+                            onClick={() => adicionarLinha('peca')}
+                            disabled={!osEditavel || finalizandoOS}
                             style={{
-                              fontSize:
-                                '21px',
-                              fontWeight:
-                                900,
-                              whiteSpace:
-                                'nowrap',
+                              border: '1px solid #555',
+                              borderRadius: '8px',
+                              background: '#1b1b1b',
+                              color: '#fff',
+                              padding: '10px 12px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
                             }}
                           >
-                            {osEditavel
-                              ? formatarMoedaNumero(
-                                  totalOrdemAberta,
-                                )
-                              : formatarMoeda(
-                                  ordemAberta.valor_total ??
-                                    totalOrdemAberta,
-                                )}
+                            + ADICIONAR PEÇA
+                          </button>
+                        </div>
+
+                        {linhasPecas.length === 0 ? (
+                          <div
+                            style={{
+                              padding: '14px',
+                              borderRadius: '8px',
+                              background: '#171717',
+                              color: '#777',
+                              textAlign: 'center',
+                              fontSize: '12px',
+                            }}
+                          >
+                            Nenhuma peça ou produto lançado.
                           </div>
+                        ) : (
+                          <>
+                            <div className="mastertec-os-cabecalho">
+                              <div style={{ color: '#777', fontSize: '10px', fontWeight: 800 }}>
+                                DESCRIÇÃO DA PEÇA / PRODUTO
+                              </div>
+                              <div style={{ color: '#777', fontSize: '10px', fontWeight: 800, textAlign: 'center' }}>
+                                QTD.
+                              </div>
+                              <div style={{ color: '#777', fontSize: '10px', fontWeight: 800, textAlign: 'right' }}>
+                                PREÇO
+                              </div>
+                            </div>
+
+                            <div
+                              style={{
+                                display: 'grid',
+                                gap: '8px',
+                                marginTop: '6px',
+                                width: '100%',
+                              }}
+                            >
+                              {linhasPecas.map((linha, index) => {
+                                const quantidade = converterNumero(linha.quantidade) || 1
+                                const valor = converterNumero(linha.valor)
+                                const totalLinha = quantidade * valor
+
+                                return (
+                                  <div
+                                    key={linha.id || `peca-${index}`}
+                                    className="mastertec-os-linha"
+                                  >
+                                    <input
+                                      type="text"
+                                      value={linha.descricao}
+                                      onChange={event =>
+                                        atualizarLinha('peca', index, 'descricao', event.target.value)
+                                      }
+                                      placeholder={osEditavel ? 'Descrição da peça / produto' : '-'}
+                                      disabled={!osEditavel || finalizandoOS}
+                                      autoCorrect="off"
+                                      spellCheck={false}
+                                      autoCapitalize="sentences"
+                                      style={{ minWidth: 0, width: '100%', maxWidth: '100%' }}
+                                    />
+
+                                    <div className="mastertec-mobile-field" style={{ minWidth: 0 }}>
+                                      <div className="mastertec-label-mobile">QUANTIDADE</div>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={linha.quantidade}
+                                        onChange={event =>
+                                          atualizarLinha('peca', index, 'quantidade', event.target.value)
+                                        }
+                                        placeholder="1"
+                                        disabled={!osEditavel || finalizandoOS}
+                                        style={{ width: '100%', maxWidth: '100%', minWidth: 0, textAlign: 'center' }}
+                                      />
+                                    </div>
+
+                                    <div className="mastertec-mobile-field" style={{ minWidth: 0 }}>
+                                      <div className="mastertec-label-mobile">PREÇO</div>
+                                      <input
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={linha.valor}
+                                        onChange={event =>
+                                          atualizarLinha('peca', index, 'valor', event.target.value)
+                                        }
+                                        placeholder="R$ 0,00"
+                                        disabled={!osEditavel || finalizandoOS}
+                                        style={{ width: '100%', maxWidth: '100%', minWidth: 0, textAlign: 'right' }}
+                                      />
+                                    </div>
+
+                                    <div
+                                      className="mastertec-os-total-linha"
+                                      style={{ color: '#999', fontSize: '11px', fontWeight: 700, textAlign: 'right' }}
+                                    >
+                                      Total: {formatarMoedaNumero(totalLinha)}
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </>
+                        )}
+
+                        <div
+                          style={{
+                            marginTop: '12px',
+                            display: 'flex',
+                            justifyContent: 'flex-end',
+                            color: '#fff',
+                            fontSize: '13px',
+                            fontWeight: 900,
+                          }}
+                        >
+                          TOTAL DE PEÇAS: {formatarMoedaNumero(totalPecas)}
+                        </div>
+                      </div>
+
+                      <div
+                        style={{
+                          marginTop: '18px',
+                          paddingTop: '15px',
+                          borderTop: '1px solid #333',
+                          display: 'grid',
+                          gap: '8px',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            color: '#aaa',
+                            fontSize: '13px',
+                          }}
+                        >
+                          <span>TOTAL DE SERVIÇOS</span>
+                          <strong>{formatarMoedaNumero(totalServicos)}</strong>
+                        </div>
+
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            color: '#aaa',
+                            fontSize: '13px',
+                          }}
+                        >
+                          <span>TOTAL DE PEÇAS</span>
+                          <strong>{formatarMoedaNumero(totalPecas)}</strong>
+                        </div>
+
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            color: '#fff',
+                            fontSize: '21px',
+                            fontWeight: 900,
+                          }}
+                        >
+                          <span>TOTAL DA O.S.</span>
+                          <strong>
+                            {osEditavel
+                              ? formatarMoedaNumero(totalOrdemAberta)
+                              : formatarMoeda(ordemAberta.valor_total ?? totalOrdemAberta)}
+                          </strong>
                         </div>
                       </div>
 
@@ -3903,6 +4487,304 @@ function App() {
                 )}
               </>
             )}
+          </section>
+        )}
+
+        {funcionario.usa_comissao && telaPrincipal ===
+          'comissoes' && (
+          <section
+            className="card"
+            style={{
+              maxWidth: '700px',
+              width: '100%',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                flexWrap: 'wrap',
+                marginBottom: '18px',
+              }}
+            >
+              <div>
+                <h1 style={{ margin: 0 }}>Minhas Comissões</h1>
+                <p
+                  className="description"
+                  style={{ marginBottom: 0 }}
+                >
+                  Comissão das O.S. encerradas de {funcionario.nome}.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void carregarMinhasOrdens()}
+                disabled={carregandoOrdens}
+                style={{
+                  padding: '10px 14px',
+                  border: '1px solid #444',
+                  borderRadius: '9px',
+                  background: '#202020',
+                  color: '#fff',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                {carregandoOrdens ? 'Atualizando...' : '↻ Atualizar'}
+              </button>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gap: '7px',
+                marginBottom: '16px',
+              }}
+            >
+              <label
+                style={{
+                  color: '#888',
+                  fontSize: '10px',
+                  fontWeight: 900,
+                }}
+              >
+                MÊS
+              </label>
+
+              <input
+                type="month"
+                value={mesComissao}
+                onChange={event => setMesComissao(event.target.value)}
+                style={{
+                  width: '100%',
+                  minHeight: '42px',
+                  boxSizing: 'border-box',
+                  padding: '10px 12px',
+                  border: '1px solid #3b3b3b',
+                  borderRadius: '9px',
+                  background: '#181818',
+                  color: '#fff',
+                  colorScheme: 'dark',
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                gap: '10px',
+                marginBottom: '16px',
+              }}
+            >
+              <div
+                style={{
+                  padding: '14px',
+                  border: '1px solid #2f5f37',
+                  borderRadius: '10px',
+                  background: '#111a13',
+                }}
+              >
+                <div
+                  style={{
+                    color: '#777',
+                    fontSize: '9px',
+                    fontWeight: 900,
+                  }}
+                >
+                  COMISSÃO NO MÊS
+                </div>
+
+                <div
+                  style={{
+                    marginTop: '6px',
+                    color: '#74e889',
+                    fontSize: '24px',
+                    fontWeight: 900,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {formatarMoeda(
+                    resumoMinhasComissoes.totalComissao,
+                  )}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: '14px',
+                  border: '1px solid #2e2e2e',
+                  borderRadius: '10px',
+                  background: '#111',
+                }}
+              >
+                <div
+                  style={{
+                    color: '#777',
+                    fontSize: '9px',
+                    fontWeight: 900,
+                  }}
+                >
+                  O.S. ENCERRADAS
+                </div>
+
+                <div
+                  style={{
+                    marginTop: '6px',
+                    color: '#fff',
+                    fontSize: '24px',
+                    fontWeight: 900,
+                  }}
+                >
+                  {resumoMinhasComissoes.ordens}
+                </div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: '14px',
+                border: '1px solid #2e2e2e',
+                borderRadius: '12px',
+                background: '#111',
+              }}
+            >
+              <div
+                style={{
+                  marginBottom: '12px',
+                  color: '#fff',
+                  fontSize: '12px',
+                  fontWeight: 900,
+                  letterSpacing: 0.5,
+                }}
+              >
+                COMISSÕES POR CLIENTE
+              </div>
+
+              {resumoMinhasComissoes.clientes.length === 0 ? (
+                <div
+                  style={{
+                    padding: '25px 10px',
+                    textAlign: 'center',
+                    color: '#777',
+                    fontSize: '12px',
+                  }}
+                >
+                  Nenhuma O.S. encerrada com comissão neste mês.
+                </div>
+              ) : (
+                <div
+                  style={{
+                    display: 'grid',
+                    gap: '8px',
+                  }}
+                >
+                  {resumoMinhasComissoes.clientes.map(cliente => (
+                    <div
+                      key={cliente.nome}
+                      style={{
+                        padding: '12px',
+                        border: '1px solid #292929',
+                        borderRadius: '9px',
+                        background: '#151515',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          justifyContent: 'space-between',
+                          gap: '10px',
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              color: '#fff',
+                              fontSize: '13px',
+                              fontWeight: 800,
+                              overflowWrap: 'anywhere',
+                            }}
+                          >
+                            {cliente.nome}
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop: '4px',
+                              color: '#777',
+                              fontSize: '10px',
+                            }}
+                          >
+                            {cliente.ordens} O.S. • Serviços {formatarMoeda(cliente.valorServicos)}
+                          </div>
+                        </div>
+
+                        <div
+                          style={{
+                            flexShrink: 0,
+                            textAlign: 'right',
+                          }}
+                        >
+                          <div
+                            style={{
+                              color: '#777',
+                              fontSize: '8px',
+                              fontWeight: 900,
+                            }}
+                          >
+                            COMISSÃO
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop: '2px',
+                              color: '#74e889',
+                              fontSize: '15px',
+                              fontWeight: 900,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {formatarMoeda(cliente.comissao)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {resumoMinhasComissoes.clientes.length > 0 && (
+                <div
+                  style={{
+                    marginTop: '12px',
+                    paddingTop: '12px',
+                    borderTop: '1px solid #333',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                  }}
+                >
+                  <strong style={{ color: '#fff', fontSize: '12px' }}>TOTAL</strong>
+                  <strong
+                    style={{
+                      color: '#74e889',
+                      fontSize: '16px',
+                    }}
+                  >
+                    {formatarMoeda(
+                      resumoMinhasComissoes.totalComissao,
+                    )}
+                  </strong>
+                </div>
+              )}
+            </div>
           </section>
         )}
 
@@ -4002,22 +4884,6 @@ function App() {
               hidden
             />
 
-            <input
-              ref={galleryInput1Ref}
-              type="file"
-              accept="image/*"
-              onChange={selecionarFoto1}
-              hidden
-            />
-
-            <input
-              ref={galleryInput2Ref}
-              type="file"
-              accept="image/*"
-              onChange={selecionarFoto2}
-              hidden
-            />
-
             {tipoEntrada ===
               'veiculo' && (
               <div
@@ -4068,24 +4934,6 @@ function App() {
 
                 <button
                   type="button"
-                  onClick={abrirGaleria1}
-                  disabled={enviando}
-                  style={{
-                    width: '100%',
-                    padding: '11px 14px',
-                    border: '1px solid #444',
-                    borderRadius: '9px',
-                    background: '#191919',
-                    color: '#fff',
-                    cursor: enviando ? 'not-allowed' : 'pointer',
-                    fontWeight: 800,
-                  }}
-                >
-                  🖼️ ESCOLHER FOTO 1 DA GALERIA
-                </button>
-
-                <button
-                  type="button"
                   className="camera-area camera-clickable"
                   onClick={abrirCamera2}
                   disabled={enviando}
@@ -4119,31 +4967,12 @@ function App() {
                     </div>
                   )}
                 </button>
-
-                <button
-                  type="button"
-                  onClick={abrirGaleria2}
-                  disabled={enviando}
-                  style={{
-                    width: '100%',
-                    padding: '11px 14px',
-                    border: '1px solid #444',
-                    borderRadius: '9px',
-                    background: '#191919',
-                    color: '#fff',
-                    cursor: enviando ? 'not-allowed' : 'pointer',
-                    fontWeight: 800,
-                  }}
-                >
-                  🖼️ ESCOLHER FOTO 2 DA GALERIA
-                </button>
               </div>
             )}
 
             {tipoEntrada ===
               'peca' && (
-              <>
-                <button
+              <button
                 type="button"
                 className="camera-area camera-clickable"
                 onClick={abrirCamera1}
@@ -4178,26 +5007,6 @@ function App() {
                   </div>
                 )}
               </button>
-
-              <button
-                type="button"
-                onClick={abrirGaleria1}
-                disabled={enviando}
-                style={{
-                  width: '100%',
-                  marginTop: '10px',
-                  padding: '11px 14px',
-                  border: '1px solid #444',
-                  borderRadius: '9px',
-                  background: '#191919',
-                  color: '#fff',
-                  cursor: enviando ? 'not-allowed' : 'pointer',
-                  fontWeight: 800,
-                }}
-              >
-                🖼️ ESCOLHER FOTO DA GALERIA
-                </button>
-              </>
             )}
 
             {tipoEntrada ===
