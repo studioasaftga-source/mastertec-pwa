@@ -235,20 +235,6 @@ function obterMesDaDataCuiaba(
   }).format(date)
 }
 
-function formatarMesAtual(mes: string) {
-  const [ano, numeroMes] = mes.split('-').map(Number)
-
-  if (!ano || !numeroMes) return mes
-
-  const data = new Date(Date.UTC(ano, numeroMes - 1, 1))
-
-  return new Intl.DateTimeFormat('pt-BR', {
-    timeZone: 'UTC',
-    month: 'long',
-    year: 'numeric',
-  }).format(data)
-}
-
 function App() {
   const [
     funcionario,
@@ -293,6 +279,11 @@ function App() {
   const [
     mesComissao,
     setMesComissao,
+  ] = useState(obterMesAtualCuiaba())
+
+  const [
+    mesOS,
+    setMesOS,
   ] = useState(obterMesAtualCuiaba())
 
   const [
@@ -874,7 +865,7 @@ function App() {
     const encerradasDoMes = minhasOrdens.filter(
       ordem =>
         statusOSFechada(ordem.status) &&
-        obterMesDaDataCuiaba(ordem.data_conclusao) === mesAtual,
+        obterMesDaDataCuiaba(ordem.data_conclusao) === mesOS,
     )
 
     const ordenarMaisRecentes = (
@@ -901,7 +892,7 @@ function App() {
     )
 
     return [...abertas, ...encerradasDoMes]
-  }, [minhasOrdens, mesAtual])
+  }, [minhasOrdens, mesOS])
 
   const comissoesDoMes = minhasOrdens.filter(ordem =>
     statusEntraNaComissao(ordem.status) &&
@@ -3349,13 +3340,47 @@ function App() {
 
                     <div
                       style={{
-                        color: '#72dc7d',
-                        fontSize: '10px',
-                        fontWeight: 800,
-                        textTransform: 'uppercase',
+                        marginTop: '10px',
+                        display: 'grid',
+                        gap: '6px',
+                        maxWidth: '220px',
                       }}
                     >
-                      MÊS ATUAL: {formatarMesAtual(mesAtual)}
+                      <label
+                        htmlFor="mes-os"
+                        style={{
+                          color: '#72dc7d',
+                          fontSize: '10px',
+                          fontWeight: 800,
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        MÊS DAS O.S.
+                      </label>
+
+                      <input
+                        id="mes-os"
+                        type="month"
+                        value={mesOS}
+                        max={mesAtual}
+                        onChange={event =>
+                          setMesOS(event.target.value || mesAtual)
+                        }
+                        style={{
+                          width: '100%',
+                          minHeight: '40px',
+                          boxSizing: 'border-box',
+                          padding: '9px 10px',
+                          border: '1px solid #3b3b3b',
+                          borderRadius: '9px',
+                          background: '#181818',
+                          color: '#fff',
+                          colorScheme: 'dark',
+                          fontSize: '13px',
+                          fontWeight: 800,
+                          cursor: 'pointer',
+                        }}
+                      />
                     </div>
                   </div>
 
