@@ -339,6 +339,12 @@ function App() {
   const cameraInput2Ref =
     useRef<HTMLInputElement>(null)
 
+  const galleryInput1Ref =
+    useRef<HTMLInputElement>(null)
+
+  const galleryInput2Ref =
+    useRef<HTMLInputElement>(null)
+
   const [
     tipoEntrada,
     setTipoEntrada,
@@ -2167,6 +2173,22 @@ function App() {
     cameraInput2Ref.current?.click()
   }
 
+  function abrirGaleria1() {
+    if (enviando) {
+      return
+    }
+
+    galleryInput1Ref.current?.click()
+  }
+
+  function abrirGaleria2() {
+    if (enviando) {
+      return
+    }
+
+    galleryInput2Ref.current?.click()
+  }
+
   async function selecionarFoto1(
     event: ChangeEvent<HTMLInputElement>,
   ) {
@@ -2213,6 +2235,13 @@ function App() {
       cameraInput1Ref.current
     ) {
       cameraInput1Ref.current.value =
+        ''
+    }
+
+    if (
+      galleryInput1Ref.current
+    ) {
+      galleryInput1Ref.current.value =
         ''
     }
   }
@@ -2263,6 +2292,13 @@ function App() {
       cameraInput2Ref.current
     ) {
       cameraInput2Ref.current.value =
+        ''
+    }
+
+    if (
+      galleryInput2Ref.current
+    ) {
+      galleryInput2Ref.current.value =
         ''
     }
   }
@@ -4969,6 +5005,22 @@ function App() {
               hidden
             />
 
+            <input
+              ref={galleryInput1Ref}
+              type="file"
+              accept="image/*"
+              onChange={selecionarFoto1}
+              hidden
+            />
+
+            <input
+              ref={galleryInput2Ref}
+              type="file"
+              accept="image/*"
+              onChange={selecionarFoto2}
+              hidden
+            />
+
             {tipoEntrada ===
               'veiculo' && (
               <div
@@ -5019,6 +5071,27 @@ function App() {
 
                 <button
                   type="button"
+                  onClick={abrirGaleria1}
+                  disabled={enviando}
+                  style={{
+                    minHeight: '46px',
+                    border: '1px solid #333',
+                    borderRadius: '10px',
+                    background: '#1a1a1a',
+                    color: '#fff',
+                    cursor: enviando
+                      ? 'not-allowed'
+                      : 'pointer',
+                    fontWeight: 800,
+                    fontSize: '14px',
+                    marginTop: '-6px',
+                  }}
+                >
+                  🖼️ ESCOLHER FOTO 1 DA GALERIA
+                </button>
+
+                <button
+                  type="button"
                   className="camera-area camera-clickable"
                   onClick={abrirCamera2}
                   disabled={enviando}
@@ -5052,12 +5125,34 @@ function App() {
                     </div>
                   )}
                 </button>
+
+                <button
+                  type="button"
+                  onClick={abrirGaleria2}
+                  disabled={enviando}
+                  style={{
+                    minHeight: '46px',
+                    border: '1px solid #333',
+                    borderRadius: '10px',
+                    background: '#1a1a1a',
+                    color: '#fff',
+                    cursor: enviando
+                      ? 'not-allowed'
+                      : 'pointer',
+                    fontWeight: 800,
+                    fontSize: '14px',
+                    marginTop: '-6px',
+                  }}
+                >
+                  🖼️ ESCOLHER FOTO 2 DA GALERIA
+                </button>
               </div>
             )}
 
             {tipoEntrada ===
               'peca' && (
-              <button
+              <>
+                <button
                 type="button"
                 className="camera-area camera-clickable"
                 onClick={abrirCamera1}
@@ -5092,6 +5187,29 @@ function App() {
                   </div>
                 )}
               </button>
+
+                <button
+                  type="button"
+                  onClick={abrirGaleria1}
+                  disabled={enviando}
+                  style={{
+                    width: '100%',
+                    minHeight: '46px',
+                    marginTop: '10px',
+                    border: '1px solid #333',
+                    borderRadius: '10px',
+                    background: '#1a1a1a',
+                    color: '#fff',
+                    cursor: enviando
+                      ? 'not-allowed'
+                      : 'pointer',
+                    fontWeight: 800,
+                    fontSize: '14px',
+                  }}
+                >
+                  🖼️ ESCOLHER FOTO DA GALERIA
+                </button>
+              </>
             )}
 
             {tipoEntrada ===
