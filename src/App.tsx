@@ -1701,28 +1701,29 @@ function App() {
       const agora =
         new Date().toISOString()
 
-      const { error: erroOS } =
-        await supabase
-          .from('ordens_servico')
-          .update({
-            status: 'servico_finalizado',
-            responsavel_id:
-              funcionario.id,
-            valor_servicos: totalServicosSalvo,
-            valor_pecas: totalPecasSalvo,
-            valor_total:
-              totalServicosSalvo + totalPecasSalvo,
-            data_conclusao: agora,
-            updated_at: agora,
-          })
-          .eq('id', ordemAberta.id)
-          .eq(
-            'responsavel_id',
-            funcionario.id,
-          )
+      // O PWA entra pelo código do funcionário e não por uma sessão
+      // administrativa do Supabase. A finalização usa uma RPC segura
+      // no banco para gravar a O.S. como servico_finalizado.
+      const { data: osSalva, error: erroOS } =
+        await supabase.rpc(
+          'finalizar_os_funcionario',
+          {
+            p_ordem_servico_id: ordemAberta.id,
+            p_funcionario_id: funcionario.id,
+            p_codigo: funcionario.codigo_acesso,
+            p_valor_servicos: totalServicosSalvo,
+            p_valor_pecas: totalPecasSalvo,
+          },
+        )
 
       if (erroOS) {
         throw erroOS
+      }
+
+      if (!osSalva || osSalva.status !== 'servico_finalizado') {
+        throw new Error(
+          'A O.S. não foi gravada como finalizada. Atualize a tela e tente novamente.',
+        )
       }
 
       const osAtualizada: OrdemServicoPWA = {
