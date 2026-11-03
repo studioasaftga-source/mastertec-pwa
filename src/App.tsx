@@ -1,4 +1,4 @@
-﻿import {
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -902,7 +902,7 @@ function App() {
 
   const comissoesDoMes = minhasOrdens.filter(ordem =>
     statusEntraNaComissao(ordem.status) &&
-    obterMesDaDataCuiaba(ordem.data_conclusao) === mesComissao,
+    obterMesDaDataCuiaba(ordem.data_entrada) === mesComissao,
   )
 
   const resumoMinhasComissoes = useMemo(() => {
