@@ -247,9 +247,19 @@ function App() {
   ] = useState('')
 
   const [
+    senhaFuncionario,
+    setSenhaFuncionario,
+  ] = useState('')
+
+  const [
     buscandoFuncionario,
     setBuscandoFuncionario,
   ] = useState(false)
+
+  const [
+    verificandoSessao,
+    setVerificandoSessao,
+  ] = useState(true)
 
   const [
     erroFuncionario,
@@ -437,73 +447,58 @@ function App() {
   const finalizacaoEmAndamento = useRef(false)
 
   useEffect(() => {
-    async function restaurarFuncionario() {
-      try {
-        const salvo = localStorage.getItem(
-          FUNCIONARIO_STORAGE_KEY,
-        )
+    let ativo = true
 
-        if (!salvo) {
+    async function restaurarFuncionario() {
+      // Remove a identificação antiga, que era confiada apenas por estar no navegador.
+      localStorage.removeItem(FUNCIONARIO_STORAGE_KEY)
+
+      try {
+        const {
+          data: { session },
+          error: erroSessao,
+        } = await supabase.auth.getSession()
+
+        if (erroSessao) throw erroSessao
+        if (!session?.user) return
+
+        const { data, error } = await supabase
+          .from('usuarios')
+          .select('id,nome,codigo_acesso,empresa_id,usa_comissao')
+          .eq('auth_user_id', session.user.id)
+          .eq('ativo', true)
+          .eq('role', 'funcionario')
+          .maybeSingle()
+
+        if (error) throw error
+
+        if (!data) {
+          await supabase.auth.signOut()
           return
         }
 
-        const dados =
-          JSON.parse(salvo) as Partial<FuncionarioLocal>
-
-        if (
-          dados &&
-          dados.id &&
-          dados.nome &&
-          dados.codigo_acesso
-        ) {
-          const funcionarioBase: FuncionarioLocal = {
-            id: dados.id,
-            nome: dados.nome,
-            codigo_acesso: dados.codigo_acesso,
-            empresa_id: dados.empresa_id ?? null,
-            usa_comissao: Boolean(dados.usa_comissao),
-          }
-
-          setFuncionario(funcionarioBase)
-
-          try {
-            const { data: permissao, error: erroPermissao } = await supabase.rpc(
-              'buscar_usa_comissao_por_codigo',
-              { p_codigo: dados.codigo_acesso },
-            )
-
-            if (erroPermissao) throw erroPermissao
-
-            const atualizado = {
-              ...funcionarioBase,
-              usa_comissao: Boolean(permissao),
-            }
-
-            localStorage.setItem(
-              FUNCIONARIO_STORAGE_KEY,
-              JSON.stringify(atualizado),
-            )
-            setFuncionario(atualizado)
-          } catch (erroPermissao) {
-            console.warn(
-              'Não foi possível atualizar a permissão de comissão; mantendo o estado local:',
-              erroPermissao,
-            )
-          }
+        if (ativo) {
+          setFuncionario({
+            id: data.id,
+            nome: data.nome,
+            codigo_acesso: data.codigo_acesso,
+            empresa_id: data.empresa_id ?? null,
+            usa_comissao: Boolean(data.usa_comissao),
+          })
         }
       } catch (error) {
-        console.error(
-          'ERRO AO RESTAURAR FUNCIONÁRIO:',
-          error,
-        )
-
-        localStorage.removeItem(
-          FUNCIONARIO_STORAGE_KEY,
-        )
+        console.error('ERRO AO RESTAURAR SESSÃO DO FUNCIONÁRIO:', error)
+        await supabase.auth.signOut()
+      } finally {
+        if (ativo) setVerificandoSessao(false)
       }
     }
 
     void restaurarFuncionario()
+
+    return () => {
+      ativo = false
+    }
   }, [])
 
   useEffect(() => {
@@ -519,123 +514,105 @@ function App() {
       .replace(/\D/g, '')
       .slice(0, 3)
 
+    const senha = senhaFuncionario
+
     setErroFuncionario('')
 
-    if (!codigo) {
-      setErroFuncionario(
-        'Digite o código do funcionário.',
-      )
+    if (codigo.length !== 3) {
+      setErroFuncionario('Digite o código de 3 números do funcionário.')
+      return
+    }
 
+    if (!senha) {
+      setErroFuncionario('Digite sua senha.')
       return
     }
 
     setBuscandoFuncionario(true)
 
     try {
+      const emailInterno =
+        'funcionario-' + codigo + '@ujkfefwchnfsaurycube.supabase.co'
+
       const {
-        data,
-        error,
-      } = await supabase.rpc(
-        'buscar_funcionario_por_codigo',
-        {
-          p_codigo: codigo,
-        },
-      )
+        data: sessao,
+        error: erroLogin,
+      } = await supabase.auth.signInWithPassword({
+        email: emailInterno,
+        password: senha,
+      })
 
-      if (error) {
-        console.error(
-          'ERRO AO BUSCAR FUNCIONÁRIO:',
-          error,
-        )
-
-        setErroFuncionario(
-          `Não foi possível identificar o funcionário: ${error.message}`,
-        )
-
-        return
-      }
-
-      const funcionarioEncontrado =
-        Array.isArray(data) ? data[0] : null
-
-      if (!funcionarioEncontrado) {
-        setErroFuncionario(
-          'Código não encontrado ou funcionário inativo.',
-        )
-
-        return
+      if (erroLogin || !sessao.user) {
+        throw new Error('Código ou senha incorretos, ou funcionário inativo.')
       }
 
       const {
-        data: usaComissao,
-        error: erroPermissao,
-      } = await supabase.rpc(
-        'buscar_usa_comissao_por_codigo',
-        {
-          p_codigo: funcionarioEncontrado.codigo_acesso,
-        },
-      )
+        data: perfil,
+        error: erroPerfil,
+      } = await supabase
+        .from('usuarios')
+        .select('id,nome,codigo_acesso,empresa_id,usa_comissao')
+        .eq('auth_user_id', sessao.user.id)
+        .eq('ativo', true)
+        .eq('role', 'funcionario')
+        .maybeSingle()
 
-      if (erroPermissao) {
-        throw erroPermissao
+      if (erroPerfil || !perfil) {
+        await supabase.auth.signOut()
+        throw new Error('Não foi possível validar o cadastro deste funcionário.')
       }
 
-      const funcionarioLocal: FuncionarioLocal =
-        {
-          id: funcionarioEncontrado.id,
-          nome: funcionarioEncontrado.nome,
-          codigo_acesso:
-            funcionarioEncontrado.codigo_acesso,
-          empresa_id:
-            funcionarioEncontrado.empresa_id ??
-            null,
-          usa_comissao: Boolean(usaComissao),
-        }
+      const funcionarioLocal: FuncionarioLocal = {
+        id: perfil.id,
+        nome: perfil.nome,
+        codigo_acesso: perfil.codigo_acesso,
+        empresa_id: perfil.empresa_id ?? null,
+        usa_comissao: Boolean(perfil.usa_comissao),
+      }
 
-      localStorage.setItem(
-        FUNCIONARIO_STORAGE_KEY,
-        JSON.stringify(funcionarioLocal),
-      )
-
+      // A identificação não é mais salva no localStorage.
       setFuncionario(funcionarioLocal)
-
       setCodigoFuncionario('')
+      setSenhaFuncionario('')
       setErroFuncionario('')
     } catch (error) {
-      console.error(
-        'ERRO AO IDENTIFICAR FUNCIONÁRIO:',
-        error,
-      )
-
+      console.error('ERRO AO AUTENTICAR FUNCIONÁRIO:', error)
       setErroFuncionario(
-        'Não foi possível identificar o funcionário.',
+        error instanceof Error
+          ? error.message
+          : 'Não foi possível entrar. Confira o código e a senha.',
       )
     } finally {
       setBuscandoFuncionario(false)
     }
   }
 
-  function trocarFuncionario() {
-    if (enviando) {
-      return
-    }
+  async function trocarFuncionario() {
+    if (enviando) return
 
     const confirmar = window.confirm(
-      'Deseja trocar o funcionário deste celular?',
+      'Deseja sair da conta deste funcionário neste celular?',
     )
 
-    if (!confirmar) {
+    if (!confirmar) return
+
+    const { error } = await supabase.auth.signOut()
+
+    if (error) {
+      alert('Não foi possível encerrar a sessão. Tente novamente.')
+      console.error('ERRO AO SAIR:', error)
       return
     }
 
-    localStorage.removeItem(
-      FUNCIONARIO_STORAGE_KEY,
-    )
-
+    localStorage.removeItem(FUNCIONARIO_STORAGE_KEY)
     setFuncionario(null)
     setCodigoFuncionario('')
+    setSenhaFuncionario('')
     setErroFuncionario('')
     setTelaPrincipal('entrada')
+    setMinhasOrdens([])
+    setOrdemAberta(null)
+    setEntradaDaOrdem(null)
   }
 
   async function anexarNomesClientes(
@@ -711,13 +688,7 @@ function App() {
         const {
           data,
           error,
-        } = await supabase.rpc(
-          'buscar_minhas_ordens_por_codigo',
-          {
-            p_codigo:
-              funcionario.codigo_acesso,
-          },
-        )
+        } = await supabase.rpc('buscar_minhas_ordens')
 
         if (error) {
           throw error
@@ -1028,20 +999,10 @@ function App() {
       )
     }
 
-    if (!funcionario.codigo_acesso) {
-      return null
-    }
-
     const {
       data,
       error,
-    } = await supabase.rpc(
-      'buscar_minhas_ordens_por_codigo',
-      {
-        p_codigo:
-          funcionario.codigo_acesso,
-      },
-    )
+    } = await supabase.rpc('buscar_minhas_ordens')
 
     if (error) {
       throw error
@@ -1705,16 +1666,11 @@ function App() {
       // administrativa do Supabase. A finalização usa uma RPC segura
       // no banco para gravar a O.S. como servico_finalizado.
       const { data: osSalva, error: erroOS } =
-        await supabase.rpc(
-          'finalizar_os_funcionario',
-          {
-            p_ordem_servico_id: ordemAberta.id,
-            p_funcionario_id: funcionario.id,
-            p_codigo: funcionario.codigo_acesso,
-            p_valor_servicos: totalServicosSalvo,
-            p_valor_pecas: totalPecasSalvo,
-          },
-        )
+        await supabase.rpc('finalizar_minha_os', {
+          p_ordem_servico_id: ordemAberta.id,
+          p_valor_servicos: totalServicosSalvo,
+          p_valor_pecas: totalPecasSalvo,
+        })
 
       if (erroOS) {
         throw erroOS
@@ -2804,7 +2760,7 @@ function App() {
           data: ordemServicoId,
           error: erroCriacaoOS,
         } = await supabase.rpc(
-          'criar_os_da_entrada',
+          'criar_os_da_entrada_autenticada',
           {
             p_entrada_id:
               entradaCriada.id,
@@ -2890,7 +2846,9 @@ function App() {
             </h1>
 
             <p>
-              Identificação do funcionário
+              {verificandoSessao
+                ? 'Verificando sessão segura'
+                : 'Acesso do funcionário'}
             </p>
           </div>
 
@@ -2899,8 +2857,7 @@ function App() {
               marginBottom: '20px',
               padding: '14px 16px',
               border: '1px solid #383838',
-              borderLeft:
-                '4px solid #d71920',
+              borderLeft: '4px solid #d71920',
               borderRadius: '10px',
               background: '#151515',
               color: '#dddddd',
@@ -2908,14 +2865,12 @@ function App() {
               lineHeight: 1.5,
             }}
           >
-            Digite seu código para acessar
-            as entradas e as Ordens de
-            Serviço atribuídas a você.
+            Para acessar, informe seu código de funcionário e sua senha individual.
           </div>
 
           <div className="form-group">
             <label htmlFor="codigoFuncionario">
-              ID DO FUNCIONÁRIO
+              CÓDIGO DO FUNCIONÁRIO
             </label>
 
             <input
@@ -2923,39 +2878,53 @@ function App() {
               type="text"
               inputMode="numeric"
               maxLength={3}
-              value={
-                codigoFuncionario
-              }
+              autoComplete="username"
+              value={codigoFuncionario}
               onChange={event => {
-                const valor =
-                  event.target.value
-                    .replace(/\D/g, '')
-                    .slice(0, 3)
+                const valor = event.target.value
+                  .replace(/\D/g, '')
+                  .slice(0, 3)
 
-                setCodigoFuncionario(
-                  valor,
-                )
-
+                setCodigoFuncionario(valor)
                 setErroFuncionario('')
               }}
               onKeyDown={event => {
-                if (
-                  event.key ===
-                  'Enter'
-                ) {
+                if (event.key === 'Enter') {
                   event.preventDefault()
-
-                  void entrarComoFuncionario()
+                  document.getElementById('senhaFuncionario')?.focus()
                 }
               }}
-              placeholder="Ex.: 005"
+              placeholder="Ex.: 004"
               autoFocus
             />
 
             <small>
-              Use o código de 3 números
-              fornecido pela empresa.
+              Digite os 3 números do seu código.
             </small>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="senhaFuncionario">
+              SENHA INDIVIDUAL
+            </label>
+
+            <input
+              id="senhaFuncionario"
+              type="password"
+              autoComplete="current-password"
+              value={senhaFuncionario}
+              onChange={event => {
+                setSenhaFuncionario(event.target.value)
+                setErroFuncionario('')
+              }}
+              onKeyDown={event => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  void entrarComoFuncionario()
+                }
+              }}
+              placeholder="Digite sua senha"
+            />
           </div>
 
           {erroFuncionario && (
@@ -2972,16 +2941,14 @@ function App() {
           <button
             type="button"
             className="login-button"
-            onClick={() =>
-              void entrarComoFuncionario()
-            }
-            disabled={
-              buscandoFuncionario
-            }
+            onClick={() => void entrarComoFuncionario()}
+            disabled={buscandoFuncionario || verificandoSessao}
           >
-            {buscandoFuncionario
-              ? 'IDENTIFICANDO...'
-              : 'ENTRAR'}
+            {verificandoSessao
+              ? 'VERIFICANDO...'
+              : buscandoFuncionario
+                ? 'ENTRANDO...'
+                : 'ENTRAR'}
           </button>
         </section>
       </main>
