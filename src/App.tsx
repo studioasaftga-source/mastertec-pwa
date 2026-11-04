@@ -1,4 +1,4 @@
-import {
+﻿import {
   useCallback,
   useEffect,
   useMemo,
@@ -6,24 +6,18 @@ import {
   useState,
   type ChangeEvent,
 } from 'react'
-
 import './App.css'
-
 import { supabase } from './lib/supabase'
-
 type TipoEntrada = 'veiculo' | 'peca'
-
 type TipoPeca =
   | 'bomba'
   | 'bico'
   | 'turbina'
   | 'outro'
-
 type TelaPrincipal =
   | 'entrada'
   | 'ordens'
   | 'comissoes'
-
 type VeiculoEncontrado = {
   id: string
   placa: string | null
@@ -32,7 +26,6 @@ type VeiculoEncontrado = {
   cliente_nome: string | null
   telefone: string | null
 }
-
 type FuncionarioLocal = {
   id: string
   nome: string
@@ -40,32 +33,23 @@ type FuncionarioLocal = {
   empresa_id: string | null
   usa_comissao: boolean
 }
-
 type DadosSalvos = {
   tipoEntrada: TipoEntrada
-
   placa: string
   modelo: string
   frota: string
-
   tiposPeca: TipoPeca[]
-
   descricaoPeca: string
-
   cliente: string
   telefone: string
-
   observacao: string
-
   foto1Base64: string | null
   foto1Nome: string | null
   foto1Tipo: string | null
-
   foto2Base64: string | null
   foto2Nome: string | null
   foto2Tipo: string | null
 }
-
 type OrdemServicoPWA = {
   id: string
   empresa_id: string
@@ -88,7 +72,6 @@ type OrdemServicoPWA = {
   valor_comissao: number | null
   updated_at: string
 }
-
 type EntradaOS = {
   id: string
   empresa_id: string
@@ -106,14 +89,12 @@ type EntradaOS = {
   foto_url: string | null
   foto_url_2: string | null
 }
-
 type LinhaServico = {
   id: string
   descricao: string
   quantidade: string
   valor: string
 }
-
 type TarefaExistente = {
   id: string
   ordem_servico_id: string
@@ -126,13 +107,17 @@ type TarefaExistente = {
   ordem: number | null
   tipo: 'servico' | 'peca' | null
 }
-
 const STORAGE_KEY =
   'mastertec_entrada_em_andamento'
-
 const FUNCIONARIO_STORAGE_KEY =
   'mastertec_funcionario'
 
+// Somente os três técnicos com comissão usam senha individual no Supabase Auth.
+const CODIGOS_COM_SENHA: Record<string, string> = {
+  '004': 'mar.004@dieselcenter.local',
+  '008': 'rodrigo.008@dieselcenter.local',
+  '009': 'talisson.009@dieselcenter.local',
+}
 function criarLinhaServico(): LinhaServico {
   return {
     id: '',
@@ -141,7 +126,6 @@ function criarLinhaServico(): LinhaServico {
     valor: '',
   }
 }
-
 const SERVICOS_BASE_SUGESTAO = [
   'Diagnóstico',
   'Reparar e regular bomba',
@@ -151,10 +135,8 @@ const SERVICOS_BASE_SUGESTAO = [
   'Remoção e instalação de bico',
   'Remoção e instalação de unidade',
 ]
-
 const SERVICOS_MEMORIA_STORAGE_KEY =
   'mastertec_servicos_memoria'
-
 function normalizarTextoBusca(texto: string) {
   return texto
     .normalize('NFD')
@@ -162,36 +144,29 @@ function normalizarTextoBusca(texto: string) {
     .toLocaleLowerCase('pt-BR')
     .trim()
 }
-
 function converterNumero(valor: string) {
   if (!valor) {
     return 0
   }
-
   let texto = valor
     .trim()
     .replace(/\s/g, '')
     .replace(/R\$/gi, '')
-
   if (texto.includes(',')) {
     texto = texto.replace(/\./g, '')
     texto = texto.replace(',', '.')
   }
-
   const numero = Number(texto)
-
   return Number.isFinite(numero)
     ? numero
     : 0
 }
-
 function formatarMoedaNumero(valor: number) {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL',
   }).format(valor)
 }
-
 function statusOSFechada(
   status: string | null | undefined,
 ) {
@@ -204,13 +179,11 @@ function statusOSFechada(
     status === 'cancelada'
   )
 }
-
 function statusEntraNaComissao(
   status: string | null | undefined,
 ) {
   return status === 'concluida' || status === 'encerrada'
 }
-
 function obterMesAtualCuiaba() {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Cuiaba',
@@ -218,241 +191,188 @@ function obterMesAtualCuiaba() {
     month: '2-digit',
   }).format(new Date())
 }
-
 function obterMesDaDataCuiaba(
   data: string | null | undefined,
 ) {
   if (!data) return ''
-
   const date = new Date(data)
-
   if (Number.isNaN(date.getTime())) return ''
-
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Cuiaba',
     year: 'numeric',
     month: '2-digit',
   }).format(date)
 }
-
 function App() {
   const [
     funcionario,
     setFuncionario,
   ] = useState<FuncionarioLocal | null>(null)
-
   const [
     codigoFuncionario,
     setCodigoFuncionario,
   ] = useState('')
-
   const [
     senhaFuncionario,
     setSenhaFuncionario,
   ] = useState('')
-
   const [
     buscandoFuncionario,
     setBuscandoFuncionario,
   ] = useState(false)
-
   const [
     verificandoSessao,
     setVerificandoSessao,
   ] = useState(true)
-
   const [
     erroFuncionario,
     setErroFuncionario,
   ] = useState('')
-
   const [
     telaPrincipal,
     setTelaPrincipal,
   ] = useState<TelaPrincipal>('entrada')
-
   const [
     minhasOrdens,
     setMinhasOrdens,
   ] = useState<OrdemServicoPWA[]>([])
-
   const [
     carregandoOrdens,
     setCarregandoOrdens,
   ] = useState(false)
-
   const [
     erroOrdens,
     setErroOrdens,
   ] = useState('')
-
   const [
     mesComissao,
     setMesComissao,
   ] = useState(obterMesAtualCuiaba())
-
   const [
     mesOS,
     setMesOS,
   ] = useState(obterMesAtualCuiaba())
-
   const [
     ordemAberta,
     setOrdemAberta,
   ] = useState<OrdemServicoPWA | null>(null)
-
   const [
     entradaDaOrdem,
     setEntradaDaOrdem,
   ] = useState<EntradaOS | null>(null)
-
   const [
     carregandoDetalhesOS,
     setCarregandoDetalhesOS,
   ] = useState(false)
-
   const [
     linhasServico,
     setLinhasServico,
   ] = useState<LinhaServico[]>([
     criarLinhaServico(),
   ])
-
   const [
     linhasPecas,
     setLinhasPecas,
   ] = useState<LinhaServico[]>([])
-
   const [
     finalizandoOS,
     setFinalizandoOS,
   ] = useState(false)
-
   const [
     tarefasOriginais,
     setTarefasOriginais,
   ] = useState<TarefaExistente[]>([])
-
   const [
     servicosMemoria,
     setServicosMemoria,
   ] = useState<string[]>([])
-
   const [
     indiceServicoComSugestao,
     setIndiceServicoComSugestao,
   ] = useState<number | null>(null)
-
   const cameraInput1Ref =
     useRef<HTMLInputElement>(null)
-
   const cameraInput2Ref =
     useRef<HTMLInputElement>(null)
-
   const galleryInput1Ref =
     useRef<HTMLInputElement>(null)
-
   const galleryInput2Ref =
     useRef<HTMLInputElement>(null)
-
   const [
     tipoEntrada,
     setTipoEntrada,
   ] = useState<TipoEntrada>('veiculo')
-
   const [
     foto1,
     setFoto1,
   ] = useState<string | null>(null)
-
   const [
     arquivoFoto1,
     setArquivoFoto1,
   ] = useState<File | null>(null)
-
   const [
     foto2,
     setFoto2,
   ] = useState<string | null>(null)
-
   const [
     arquivoFoto2,
     setArquivoFoto2,
   ] = useState<File | null>(null)
-
   const [
     placa,
     setPlaca,
   ] = useState('')
-
   const [
     modelo,
     setModelo,
   ] = useState('')
-
   const [
     frota,
     setFrota,
   ] = useState('')
-
   const [
     tiposPeca,
     setTiposPeca,
   ] = useState<TipoPeca[]>([])
-
   const [
     descricaoPeca,
     setDescricaoPeca,
   ] = useState('')
-
   const [
     cliente,
     setCliente,
   ] = useState('')
-
   const [
     telefone,
     setTelefone,
   ] = useState('')
-
   const [
     observacao,
     setObservacao,
   ] = useState('')
-
   const [
     enviando,
     setEnviando,
   ] = useState(false)
-
   const [
     consultandoPlaca,
     setConsultandoPlaca,
   ] = useState(false)
-
   const [
     veiculoEncontrado,
     setVeiculoEncontrado,
   ] = useState<VeiculoEncontrado | null>(null)
-
   const [
     mostrarVeiculoEncontrado,
     setMostrarVeiculoEncontrado,
   ] = useState(false)
-
   const ultimaPlacaConsultada = useRef('')
-
   const restauracaoConcluida = useRef(false)
-
   const finalizacaoEmAndamento = useRef(false)
-
   useEffect(() => {
     let ativo = true
 
     async function restaurarFuncionario() {
-      // Remove a identificação antiga, que era confiada apenas por estar no navegador.
-      localStorage.removeItem(FUNCIONARIO_STORAGE_KEY)
-
       try {
         const {
           data: { session },
@@ -460,34 +380,82 @@ function App() {
         } = await supabase.auth.getSession()
 
         if (erroSessao) throw erroSessao
-        if (!session?.user) return
 
-        const { data, error } = await supabase
-          .from('usuarios')
-          .select('id,nome,codigo_acesso,empresa_id,usa_comissao')
-          .eq('auth_user_id', session.user.id)
-          .eq('ativo', true)
-          .eq('role', 'funcionario')
-          .maybeSingle()
+        if (session?.user) {
+          const { data, error } = await supabase
+            .from('usuarios')
+            .select('id,nome,codigo_acesso,empresa_id,usa_comissao')
+            .eq('auth_user_id', session.user.id)
+            .eq('ativo', true)
+            .eq('role', 'funcionario')
+            .maybeSingle()
 
-        if (error) throw error
+          if (error) throw error
 
-        if (!data) {
+          if (data && data.usa_comissao === true && CODIGOS_COM_SENHA[data.codigo_acesso]) {
+            localStorage.removeItem(FUNCIONARIO_STORAGE_KEY)
+            if (ativo) {
+              setFuncionario({
+                id: data.id,
+                nome: data.nome,
+                codigo_acesso: data.codigo_acesso,
+                empresa_id: data.empresa_id ?? null,
+                usa_comissao: true,
+              })
+            }
+            return
+          }
+
           await supabase.auth.signOut()
+        }
+
+        // Os demais funcionários continuam entrando somente com o código.
+        // A identificação salva no aparelho é revalidada no banco.
+        const salvo = localStorage.getItem(FUNCIONARIO_STORAGE_KEY)
+        if (!salvo) return
+
+        const dados = JSON.parse(salvo) as Partial<FuncionarioLocal>
+        const codigo = String(dados.codigo_acesso ?? '').trim()
+
+        if (!dados.id || !/^\d{3}$/.test(codigo) || CODIGOS_COM_SENHA[codigo]) {
+          localStorage.removeItem(FUNCIONARIO_STORAGE_KEY)
           return
         }
 
-        if (ativo) {
-          setFuncionario({
-            id: data.id,
-            nome: data.nome,
-            codigo_acesso: data.codigo_acesso,
-            empresa_id: data.empresa_id ?? null,
-            usa_comissao: Boolean(data.usa_comissao),
-          })
+        const { data: funcionarios, error: erroFuncionario } = await supabase.rpc(
+          'buscar_funcionario_por_codigo',
+          { p_codigo: codigo },
+        )
+        if (erroFuncionario) throw erroFuncionario
+
+        const perfil = Array.isArray(funcionarios) ? funcionarios[0] : null
+        if (!perfil || perfil.id !== dados.id) {
+          localStorage.removeItem(FUNCIONARIO_STORAGE_KEY)
+          return
         }
+
+        const { data: usaComissao, error: erroPermissao } = await supabase.rpc(
+          'buscar_usa_comissao_por_codigo',
+          { p_codigo: codigo },
+        )
+        if (erroPermissao) throw erroPermissao
+        if (usaComissao) {
+          localStorage.removeItem(FUNCIONARIO_STORAGE_KEY)
+          return
+        }
+
+        const funcionarioLocal: FuncionarioLocal = {
+          id: perfil.id,
+          nome: perfil.nome,
+          codigo_acesso: perfil.codigo_acesso,
+          empresa_id: perfil.empresa_id ?? null,
+          usa_comissao: false,
+        }
+        localStorage.setItem(FUNCIONARIO_STORAGE_KEY, JSON.stringify(funcionarioLocal))
+        if (ativo) setFuncionario(funcionarioLocal)
       } catch (error) {
-        console.error('ERRO AO RESTAURAR SESSÃO DO FUNCIONÁRIO:', error)
+        console.error('ERRO AO RESTAURAR FUNCIONÁRIO:', error)
+        localStorage.removeItem(FUNCIONARIO_STORAGE_KEY)
         await supabase.auth.signOut()
       } finally {
         if (ativo) setVerificandoSessao(false)
@@ -495,7 +463,6 @@ function App() {
     }
 
     void restaurarFuncionario()
-
     return () => {
       ativo = false
     }
@@ -507,14 +474,14 @@ function App() {
       setOrdemAberta(null)
     }
   }, [funcionario, telaPrincipal])
-
-  async function entrarComoFuncionario() {
-    const codigo = codigoFuncionario
+  async function entrarComoFuncionario(codigoInformado?: string) {
+    const codigo = (codigoInformado ?? codigoFuncionario)
       .trim()
       .replace(/\D/g, '')
       .slice(0, 3)
-
     const senha = senhaFuncionario
+    const emailInterno = CODIGOS_COM_SENHA[codigo]
+    const exigeSenha = Boolean(emailInterno)
 
     setErroFuncionario('')
 
@@ -522,65 +489,86 @@ function App() {
       setErroFuncionario('Digite o código de 3 números do funcionário.')
       return
     }
-
-    if (!senha) {
-      setErroFuncionario('Digite sua senha.')
+    if (exigeSenha && !senha) {
+      setErroFuncionario('Este funcionário precisa informar sua senha individual.')
       return
     }
 
     setBuscandoFuncionario(true)
-
     try {
-      const emailInterno =
-        'funcionario-' + codigo + '@ujkfefwchnfsaurycube.supabase.co'
+      let funcionarioLocal: FuncionarioLocal
 
-      const {
-        data: sessao,
-        error: erroLogin,
-      } = await supabase.auth.signInWithPassword({
-        email: emailInterno,
-        password: senha,
-      })
-
-      if (erroLogin || !sessao.user) {
-        throw new Error('Código ou senha incorretos, ou funcionário inativo.')
-      }
-
-      const {
-        data: perfil,
-        error: erroPerfil,
-      } = await supabase
-        .from('usuarios')
-        .select('id,nome,codigo_acesso,empresa_id,usa_comissao')
-        .eq('auth_user_id', sessao.user.id)
-        .eq('ativo', true)
-        .eq('role', 'funcionario')
-        .maybeSingle()
-
-      if (erroPerfil || !perfil) {
+      if (exigeSenha) {
         await supabase.auth.signOut()
-        throw new Error('Não foi possível validar o cadastro deste funcionário.')
+        const { data: sessao, error: erroLogin } = await supabase.auth.signInWithPassword({
+          email: emailInterno,
+          password: senha,
+        })
+        if (erroLogin || !sessao.user) {
+          throw new Error('Código ou senha incorretos, ou funcionário inativo.')
+        }
+
+        const { data: perfil, error: erroPerfil } = await supabase
+          .from('usuarios')
+          .select('id,nome,codigo_acesso,empresa_id,usa_comissao')
+          .eq('auth_user_id', sessao.user.id)
+          .eq('ativo', true)
+          .eq('role', 'funcionario')
+          .maybeSingle()
+
+        if (erroPerfil || !perfil || perfil.codigo_acesso !== codigo || perfil.usa_comissao !== true) {
+          await supabase.auth.signOut()
+          throw new Error('A conta autenticada não corresponde ao código informado.')
+        }
+
+        funcionarioLocal = {
+          id: perfil.id,
+          nome: perfil.nome,
+          codigo_acesso: perfil.codigo_acesso,
+          empresa_id: perfil.empresa_id ?? null,
+          usa_comissao: true,
+        }
+        localStorage.removeItem(FUNCIONARIO_STORAGE_KEY)
+      } else {
+        await supabase.auth.signOut()
+        const { data: funcionarios, error: erroBusca } = await supabase.rpc(
+          'buscar_funcionario_por_codigo',
+          { p_codigo: codigo },
+        )
+        if (erroBusca) throw erroBusca
+
+        const perfil = Array.isArray(funcionarios) ? funcionarios[0] : null
+        if (!perfil || perfil.codigo_acesso !== codigo) {
+          throw new Error('Código não encontrado ou funcionário inativo.')
+        }
+
+        const { data: usaComissao, error: erroPermissao } = await supabase.rpc(
+          'buscar_usa_comissao_por_codigo',
+          { p_codigo: codigo },
+        )
+        if (erroPermissao) throw erroPermissao
+        if (usaComissao) {
+          throw new Error('Este funcionário precisa entrar com código e senha.')
+        }
+
+        funcionarioLocal = {
+          id: perfil.id,
+          nome: perfil.nome,
+          codigo_acesso: perfil.codigo_acesso,
+          empresa_id: perfil.empresa_id ?? null,
+          usa_comissao: false,
+        }
+        localStorage.setItem(FUNCIONARIO_STORAGE_KEY, JSON.stringify(funcionarioLocal))
       }
 
-      const funcionarioLocal: FuncionarioLocal = {
-        id: perfil.id,
-        nome: perfil.nome,
-        codigo_acesso: perfil.codigo_acesso,
-        empresa_id: perfil.empresa_id ?? null,
-        usa_comissao: Boolean(perfil.usa_comissao),
-      }
-
-      // A identificação não é mais salva no localStorage.
       setFuncionario(funcionarioLocal)
       setCodigoFuncionario('')
       setSenhaFuncionario('')
       setErroFuncionario('')
     } catch (error) {
-      console.error('ERRO AO AUTENTICAR FUNCIONÁRIO:', error)
+      console.error('ERRO AO ENTRAR COMO FUNCIONÁRIO:', error)
       setErroFuncionario(
-        error instanceof Error
-          ? error.message
-          : 'Não foi possível entrar. Confira o código e a senha.',
+        error instanceof Error ? error.message : 'Não foi possível entrar. Confira o código e a senha.',
       )
     } finally {
       setBuscandoFuncionario(false)
@@ -589,21 +577,16 @@ function App() {
 
   async function trocarFuncionario() {
     if (enviando) return
-
     const confirmar = window.confirm(
       'Deseja sair da conta deste funcionário neste celular?',
     )
-
     if (!confirmar) return
-
     const { error } = await supabase.auth.signOut()
-
     if (error) {
       alert('Não foi possível encerrar a sessão. Tente novamente.')
       console.error('ERRO AO SAIR:', error)
       return
     }
-
     localStorage.removeItem(FUNCIONARIO_STORAGE_KEY)
     setFuncionario(null)
     setCodigoFuncionario('')
@@ -614,7 +597,6 @@ function App() {
     setOrdemAberta(null)
     setEntradaDaOrdem(null)
   }
-
   async function anexarNomesClientes(
     ordens: OrdemServicoPWA[],
   ): Promise<OrdemServicoPWA[]> {
@@ -625,17 +607,14 @@ function App() {
           .filter((id): id is string => !!id),
       ),
     )
-
     if (entradasIds.length === 0) {
       return ordens
     }
-
     try {
       const { data, error } = await supabase
         .from('entradas_veiculos')
         .select('id,cliente_nome')
         .in('id', entradasIds)
-
       if (error) {
         console.warn(
           'Não foi possível carregar os nomes dos clientes das O.S.:',
@@ -643,14 +622,12 @@ function App() {
         )
         return ordens
       }
-
       const clientes = new Map<string, string | null>(
         (data ?? []).map(item => [
           item.id,
           item.cliente_nome ?? null,
         ]),
       )
-
       return ordens.map(ordem => ({
         ...ordem,
         cliente_nome: ordem.entrada_id
@@ -665,9 +642,7 @@ function App() {
       return ordens
     }
   }
-
   const ordemAbertaIdAtual = ordemAberta?.id ?? null
-
   const carregarMinhasOrdens =
     useCallback(async (mostrarCarregando = true) => {
       if (
@@ -677,28 +652,22 @@ function App() {
       ) {
         return
       }
-
       try {
         if (mostrarCarregando) {
           setCarregandoOrdens(true)
         }
-
         setErroOrdens('')
-
         const {
           data,
           error,
         } = await supabase.rpc('buscar_minhas_ordens')
-
         if (error) {
           throw error
         }
-
         let ordensAtualizadas =
           await anexarNomesClientes(
             (data ?? []) as OrdemServicoPWA[],
           )
-
         // Para a O.S. atualmente aberta, consulta também a tabela diretamente.
         // Isso evita que o PWA fique com status antigo quando o painel acabou
         // de encerrar a O.S. ou alterou o responsável.
@@ -732,17 +701,14 @@ function App() {
                 )
                 .eq('id', ordemAbertaIdAtual)
                 .maybeSingle()
-
             if (!erroDireto && ordemDireta) {
               const ordemDiretaComCliente =
                 (await anexarNomesClientes([
                   ordemDireta as OrdemServicoPWA,
                 ]))[0]
-
               const indice = ordensAtualizadas.findIndex(
                 ordem => ordem.id === ordemAbertaIdAtual,
               )
-
               ordensAtualizadas =
                 indice >= 0
                   ? ordensAtualizadas.map(ordem =>
@@ -751,7 +717,6 @@ function App() {
                         : ordem,
                     )
                   : [ordemDiretaComCliente, ...ordensAtualizadas]
-
               setOrdemAberta(ordemDiretaComCliente)
             } else {
               setOrdemAberta(atual => {
@@ -768,7 +733,6 @@ function App() {
               'Não foi possível sincronizar diretamente a O.S. aberta:',
               error,
             )
-
             setOrdemAberta(atual => {
               if (!atual) return atual
               return (
@@ -779,18 +743,15 @@ function App() {
             })
           }
         }
-
         setMinhasOrdens(ordensAtualizadas)
       } catch (error: any) {
         console.error(
           'ERRO AO CARREGAR MINHAS OS:',
           error,
         )
-
         if (mostrarCarregando) {
           setMinhasOrdens([])
         }
-
         setErroOrdens(
           error?.message ||
             'Não foi possível carregar suas Ordens de Serviço.',
@@ -805,7 +766,6 @@ function App() {
       funcionario?.codigo_acesso,
       ordemAbertaIdAtual,
     ])
-
   useEffect(() => {
     if (
       !funcionario?.id ||
@@ -813,16 +773,13 @@ function App() {
     ) {
       return
     }
-
     void carregarMinhasOrdens()
-
     // Consulta periodicamente o status real da O.S. no banco.
     // Isso evita que o PWA continue editável usando um status antigo
     // depois que o painel encerrou a O.S.
     const intervalo = window.setInterval(() => {
       void carregarMinhasOrdens(false)
     }, 5000)
-
     return () => {
       window.clearInterval(intervalo)
     }
@@ -831,20 +788,16 @@ function App() {
     telaPrincipal,
     carregarMinhasOrdens,
   ])
-
   const mesAtual = obterMesAtualCuiaba()
-
   const ordensVisiveis = useMemo(() => {
     const abertas = minhasOrdens.filter(
       ordem => !statusOSFechada(ordem.status),
     )
-
     const encerradasDoMes = minhasOrdens.filter(
       ordem =>
         statusOSFechada(ordem.status) &&
         obterMesDaDataCuiaba(ordem.data_conclusao) === mesOS,
     )
-
     const ordenarMaisRecentes = (
       primeira: OrdemServicoPWA,
       segunda: OrdemServicoPWA,
@@ -856,26 +809,20 @@ function App() {
       const dataSegunda = new Date(
         segunda[campo] || 0,
       ).getTime()
-
       return dataSegunda - dataPrimeira
     }
-
     abertas.sort((a, b) =>
       ordenarMaisRecentes(a, b, 'data_entrada'),
     )
-
     encerradasDoMes.sort((a, b) =>
       ordenarMaisRecentes(a, b, 'data_conclusao'),
     )
-
     return [...abertas, ...encerradasDoMes]
   }, [minhasOrdens, mesOS])
-
   const comissoesDoMes = minhasOrdens.filter(ordem =>
     statusEntraNaComissao(ordem.status) &&
     obterMesDaDataCuiaba(ordem.data_entrada) === mesComissao,
   )
-
   const resumoMinhasComissoes = useMemo(() => {
     const clientesMap = new Map<
       string,
@@ -887,23 +834,17 @@ function App() {
         comissao: number
       }
     >()
-
     let totalServicos = 0
     let totalComissao = 0
-
     for (const ordem of comissoesDoMes) {
       const cliente =
         ordem.cliente_nome?.trim() || 'Cliente não informado'
       const chave = cliente.toLocaleLowerCase('pt-BR')
-
       const valorServicos = Number(ordem.valor_servicos ?? 0)
       const valorComissao = Number(ordem.valor_comissao ?? 0)
-
       totalServicos += valorServicos
       totalComissao += valorComissao
-
       const atual = clientesMap.get(chave)
-
       if (atual) {
         atual.ordens += 1
         atual.servicos += valorServicos > 0 ? 1 : 0
@@ -919,7 +860,6 @@ function App() {
         })
       }
     }
-
     return {
       ordens: comissoesDoMes.length,
       clientes: Array.from(clientesMap.values()).sort((a, b) =>
@@ -929,14 +869,12 @@ function App() {
       totalComissao,
     }
   }, [comissoesDoMes])
-
   async function buscarOrdemAtualPorCodigo(
     ordemId: string,
   ): Promise<OrdemServicoPWA | null> {
     if (!funcionario?.id) {
       return null
     }
-
     // Primeiro lê diretamente a O.S. pelo ID. O status retornado aqui é o
     // estado atual do banco, inclusive depois que o painel a encerrou.
     try {
@@ -968,18 +906,15 @@ function App() {
           )
           .eq('id', ordemId)
           .maybeSingle()
-
       if (!erroDireto && ordemDireta) {
         const ordemComCliente =
           (await anexarNomesClientes([
             ordemDireta as OrdemServicoPWA,
           ]))[0]
-
         setMinhasOrdens(anterior => {
           const existe = anterior.some(
             ordem => ordem.id === ordemId,
           )
-
           return existe
             ? anterior.map(ordem =>
                 ordem.id === ordemId
@@ -988,7 +923,6 @@ function App() {
               )
             : [ordemComCliente, ...anterior]
         })
-
         setOrdemAberta(ordemComCliente)
         return ordemComCliente
       }
@@ -998,35 +932,27 @@ function App() {
         error,
       )
     }
-
     const {
       data,
       error,
     } = await supabase.rpc('buscar_minhas_ordens')
-
     if (error) {
       throw error
     }
-
     const ordensAtualizadas =
       await anexarNomesClientes(
         (data ?? []) as OrdemServicoPWA[],
       )
-
     const ordemAtual =
       ordensAtualizadas.find(
         ordem => ordem.id === ordemId,
       ) || null
-
     setMinhasOrdens(ordensAtualizadas)
-
     if (ordemAtual) {
       setOrdemAberta(ordemAtual)
     }
-
     return ordemAtual
   }
-
   async function abrirMinhaOS(
     ordem: OrdemServicoPWA,
   ) {
@@ -1036,19 +962,15 @@ function App() {
     try {
       setCarregandoDetalhesOS(true)
       setErroOrdens('')
-
       // Nunca abrimos a O.S. usando apenas o status antigo que veio
       // da lista. Primeiro buscamos o status atual no banco.
       const ordemAtual =
         await buscarOrdemAtualPorCodigo(ordem.id)
-
       const ordemParaAbrir =
         ordemAtual || ordem
-
       setOrdemAberta(ordemParaAbrir)
       setEntradaDaOrdem(null)
       setTarefasOriginais([])
-
       const entradaPromise =
         ordemParaAbrir.entrada_id
           ? supabase
@@ -1078,7 +1000,6 @@ function App() {
               data: null,
               error: null,
             })
-
       const tarefasPromise =
         supabase
           .from('os_tarefas')
@@ -1103,7 +1024,6 @@ function App() {
           .order('ordem', {
             ascending: true,
           })
-
       const [
         entradaResult,
         tarefasResult,
@@ -1111,25 +1031,19 @@ function App() {
         entradaPromise,
         tarefasPromise,
       ])
-
       if (entradaResult.error) {
         throw entradaResult.error
       }
-
       if (tarefasResult.error) {
         throw tarefasResult.error
       }
-
       setEntradaDaOrdem(
         entradaResult.data as EntradaOS | null,
       )
-
       const tarefas =
         (tarefasResult.data ??
           []) as TarefaExistente[]
-
       setTarefasOriginais(tarefas)
-
       const converterTarefaParaLinha = (
         tarefa: TarefaExistente,
       ): LinhaServico => ({
@@ -1149,15 +1063,12 @@ function App() {
           .toFixed(2)
           .replace('.', ','),
       })
-
       const servicosExistentes = tarefas
         .filter(tarefa => tarefa.tipo !== 'peca')
         .map(converterTarefaParaLinha)
-
       const pecasExistentes = tarefas
         .filter(tarefa => tarefa.tipo === 'peca')
         .map(converterTarefaParaLinha)
-
       if (servicosExistentes.length === 0) {
         servicosExistentes.push(
           criarLinhaServico(),
@@ -1169,11 +1080,9 @@ function App() {
           criarLinhaServico(),
         )
       }
-
       setLinhasServico(
         servicosExistentes,
       )
-
       setLinhasPecas(
         pecasExistentes,
       )
@@ -1182,42 +1091,33 @@ function App() {
         'ERRO AO ABRIR OS:',
         error,
       )
-
       setErroOrdens(
         error?.message ||
           'Não foi possível abrir a Ordem de Serviço.',
       )
-
       setLinhasServico([
         criarLinhaServico(),
       ])
-
       setLinhasPecas([])
     } finally {
       setCarregandoDetalhesOS(false)
     }
   }
-
   const osEditavel =
     !!ordemAberta &&
     !statusOSFechada(ordemAberta.status)
-
   useEffect(() => {
     try {
       const salvo = localStorage.getItem(
         SERVICOS_MEMORIA_STORAGE_KEY,
       )
-
       if (!salvo) {
         return
       }
-
       const lista = JSON.parse(salvo)
-
       if (!Array.isArray(lista)) {
         return
       }
-
       const limpa = lista
         .filter(
           item =>
@@ -1225,7 +1125,6 @@ function App() {
             item.trim().length > 0,
         )
         .map(item => item.trim())
-
       setServicosMemoria(limpa)
     } catch (error) {
       console.warn(
@@ -1234,40 +1133,31 @@ function App() {
       )
     }
   }, [])
-
   function listaCompletaDeServicos() {
     const nomes = [
       ...SERVICOS_BASE_SUGESTAO,
       ...servicosMemoria,
     ]
-
     const vistos = new Set<string>()
     const resultado: string[] = []
-
     for (const nome of nomes) {
       const texto = String(nome || '').trim()
       const chave = normalizarTextoBusca(texto)
-
       if (!texto || vistos.has(chave)) {
         continue
       }
-
       vistos.add(chave)
       resultado.push(texto)
     }
-
     return resultado
   }
-
   function obterSugestoesServico(
     texto: string,
   ) {
     const busca = normalizarTextoBusca(texto)
-
     if (!busca) {
       return []
     }
-
     return listaCompletaDeServicos()
       .filter(item => {
         const nome = normalizarTextoBusca(item)
@@ -1278,34 +1168,27 @@ function App() {
         const nomeB = normalizarTextoBusca(b)
         const comecaA = nomeA.startsWith(busca)
         const comecaB = nomeB.startsWith(busca)
-
         if (comecaA !== comecaB) {
           return comecaA ? -1 : 1
         }
-
         return a.localeCompare(b, 'pt-BR')
       })
       .slice(0, 7)
   }
-
   function memorizarServico(descricao: string) {
     const texto = descricao.trim()
-
     if (!texto) {
       return
     }
-
     setServicosMemoria(anterior => {
       const existente = anterior.some(
         item =>
           normalizarTextoBusca(item) ===
           normalizarTextoBusca(texto),
       )
-
       const novaLista = existente
         ? anterior
         : [texto, ...anterior].slice(0, 80)
-
       try {
         localStorage.setItem(
           SERVICOS_MEMORIA_STORAGE_KEY,
@@ -1317,11 +1200,9 @@ function App() {
           error,
         )
       }
-
       return novaLista
     })
   }
-
   function selecionarSugestaoServico(
     index: number,
     descricao: string,
@@ -1335,14 +1216,12 @@ function App() {
     memorizarServico(descricao)
     setIndiceServicoComSugestao(null)
   }
-
   function adicionarLinha(
     tipo: 'servico' | 'peca',
   ) {
     if (!osEditavel) {
       return
     }
-
     if (tipo === 'servico') {
       setLinhasServico(anterior => [
         ...anterior,
@@ -1350,13 +1229,11 @@ function App() {
       ])
       return
     }
-
     setLinhasPecas(anterior => [
       ...anterior,
       criarLinhaServico(),
     ])
   }
-
   function atualizarLinha(
     tipo: 'servico' | 'peca',
     index: number,
@@ -1369,24 +1246,19 @@ function App() {
     if (!osEditavel) {
       return
     }
-
     const setter =
       tipo === 'servico'
         ? setLinhasServico
         : setLinhasPecas
-
     setter(anterior => {
       const novas = [...anterior]
-
       novas[index] = {
         ...novas[index],
         [campo]: valor,
       }
-
       return novas
     })
   }
-
   function totalDasLinhas(
     linhas: LinhaServico[],
   ) {
@@ -1396,25 +1268,19 @@ function App() {
           converterNumero(
             linha.quantidade,
           ) || 1
-
         const valor =
           converterNumero(linha.valor)
-
         return total + quantidade * valor
       },
       0,
     )
   }
-
   const totalServicos =
     totalDasLinhas(linhasServico)
-
   const totalPecas =
     totalDasLinhas(linhasPecas)
-
   const totalOrdemAberta =
     totalServicos + totalPecas
-
   async function finalizarEnviarOS() {
     if (
       !ordemAberta ||
@@ -1422,51 +1288,40 @@ function App() {
     ) {
       return
     }
-
     // Protege contra dois toques rápidos no botão. Sem esta trava,
     // duas requisições podem inserir a mesma linha de serviço.
     if (finalizacaoEmAndamento.current) {
       return
     }
-
     if (!osEditavel) {
       alert(
         'Esta O.S. está encerrada e está disponível somente para visualização.',
       )
-
       return
     }
-
     try {
       finalizacaoEmAndamento.current = true
       setFinalizandoOS(true)
-
       // CONFIRMA O STATUS REAL ANTES DE ALTERAR QUALQUER TAREFA.
       // Se o painel já encerrou a O.S., o PWA para imediatamente
       // e não envia nenhuma alteração.
       const ordemAtual =
         await buscarOrdemAtualPorCodigo(ordemAberta.id)
-
       if (!ordemAtual) {
         throw new Error(
           'Esta O.S. não está mais disponível para este funcionário.',
         )
       }
-
       if (statusOSFechada(ordemAtual.status)) {
         setOrdemAberta(ordemAtual)
         await abrirMinhaOS(ordemAtual)
-
         alert(
           'Esta O.S. já foi encerrada pelo painel. Não é mais possível fazer alterações.',
         )
-
         return
       }
-
       // Usa o estado recém-consultado como fonte da verdade.
       setOrdemAberta(ordemAtual)
-
       const linhasPreenchidas = [
         ...linhasServico.map(linha => ({
           ...linha,
@@ -1482,10 +1337,8 @@ function App() {
             converterNumero(
               linha.quantidade,
             )
-
           const valor =
             converterNumero(linha.valor)
-
           return {
             ...linha,
             index,
@@ -1503,13 +1356,10 @@ function App() {
             linha.descricao ||
             linha.valorNumero > 0,
         )
-
       let totalServicosSalvo = 0
       let totalPecasSalvo = 0
-
       const idsMantidos =
         new Set<string>()
-
       for (
         let i = 0;
         i < linhasPreenchidas.length;
@@ -1517,27 +1367,21 @@ function App() {
       ) {
         const linha =
           linhasPreenchidas[i]
-
         const quantidade =
           linha.quantidadeNumero
-
         const valor =
           linha.valorNumero
-
         const valorTotal =
           quantidade * valor
-
         if (linha.tipo === 'servico') {
           totalServicosSalvo += valorTotal
         } else {
           totalPecasSalvo += valorTotal
         }
-
         if (linha.id) {
           idsMantidos.add(
             linha.id,
           )
-
           const { error } =
             await supabase
               .from('os_tarefas')
@@ -1573,7 +1417,6 @@ function App() {
                 'ordem_servico_id',
                 ordemAberta.id,
               )
-
           if (error) {
             throw error
           }
@@ -1613,11 +1456,9 @@ function App() {
             })
             .select('id')
             .maybeSingle()
-
           if (error) {
             throw error
           }
-
           if (novaTarefa?.id) {
             idsMantidos.add(
               novaTarefa.id,
@@ -1625,12 +1466,10 @@ function App() {
           }
         }
       }
-
       const idsAntigos =
         tarefasOriginais.map(
           tarefa => tarefa.id,
         )
-
       const idsParaExcluir =
         idsAntigos.filter(
           tarefaId =>
@@ -1638,7 +1477,6 @@ function App() {
               tarefaId,
             ),
         )
-
       if (idsParaExcluir.length > 0) {
         const {
           error: erroExclusao,
@@ -1650,7 +1488,6 @@ function App() {
             'ordem_servico_id',
             ordemAberta.id,
           )
-
         if (erroExclusao) {
           console.warn(
             'Não foi possível excluir tarefas removidas:',
@@ -1658,10 +1495,8 @@ function App() {
           )
         }
       }
-
       const agora =
         new Date().toISOString()
-
       // O PWA entra pelo código do funcionário e não por uma sessão
       // administrativa do Supabase. A finalização usa uma RPC segura
       // no banco para gravar a O.S. como servico_finalizado.
@@ -1671,17 +1506,14 @@ function App() {
           p_valor_servicos: totalServicosSalvo,
           p_valor_pecas: totalPecasSalvo,
         })
-
       if (erroOS) {
         throw erroOS
       }
-
       if (!osSalva || osSalva.status !== 'servico_finalizado') {
         throw new Error(
           'A O.S. não foi gravada como finalizada. Atualize a tela e tente novamente.',
         )
       }
-
       const osAtualizada: OrdemServicoPWA = {
         ...ordemAberta,
         status: 'servico_finalizado',
@@ -1694,7 +1526,6 @@ function App() {
         data_conclusao: agora,
         updated_at: agora,
       }
-
       setMinhasOrdens(anterior =>
         anterior.map(ordem =>
           ordem.id === ordemAberta.id
@@ -1715,15 +1546,12 @@ function App() {
             : ordem,
         ),
       )
-
       await abrirMinhaOS(osAtualizada)
-
       for (const linha of linhasPreenchidas) {
         if (linha.tipo === 'servico' && linha.descricao) {
           memorizarServico(linha.descricao)
         }
       }
-
       alert(
         'O.S. finalizada e enviada com sucesso!',
       )
@@ -1732,7 +1560,6 @@ function App() {
         'ERRO AO FINALIZAR OS:',
         error,
       )
-
       alert(
         error?.message ||
           'Não foi possível finalizar a O.S.',
@@ -1742,22 +1569,18 @@ function App() {
       setFinalizandoOS(false)
     }
   }
-
   function formatarDataHora(
     data: string | null,
   ) {
     if (!data) {
       return ''
     }
-
     const date = new Date(data)
-
     if (
       Number.isNaN(date.getTime())
     ) {
       return ''
     }
-
     return new Intl.DateTimeFormat(
       'pt-BR',
       {
@@ -1767,7 +1590,6 @@ function App() {
       },
     ).format(date)
   }
-
   function formatarMoeda(
     valor:
       | number
@@ -1776,7 +1598,6 @@ function App() {
       | undefined,
   ) {
     const numero = Number(valor || 0)
-
     return new Intl.NumberFormat(
       'pt-BR',
       {
@@ -1785,7 +1606,6 @@ function App() {
       },
     ).format(numero)
   }
-
   function arquivoParaBase64(
     arquivo: File,
   ): Promise<string> {
@@ -1796,7 +1616,6 @@ function App() {
       ) => {
         const reader =
           new FileReader()
-
         reader.onload = () => {
           if (
             typeof reader.result ===
@@ -1811,7 +1630,6 @@ function App() {
             )
           }
         }
-
         reader.onerror = () => {
           reject(
             new Error(
@@ -1819,14 +1637,12 @@ function App() {
             ),
           )
         }
-
         reader.readAsDataURL(
           arquivo,
         )
       },
     )
   }
-
   function base64ParaArquivo(
     base64: string,
     nome: string,
@@ -1834,16 +1650,13 @@ function App() {
   ): File {
     const partes =
       base64.split(',')
-
     const dados = atob(
       partes[1],
     )
-
     const bytes =
       new Uint8Array(
         dados.length,
       )
-
     for (
       let i = 0;
       i < dados.length;
@@ -1852,7 +1665,6 @@ function App() {
       bytes[i] =
         dados.charCodeAt(i)
     }
-
     return new File(
       [bytes],
       nome,
@@ -1863,7 +1675,6 @@ function App() {
       },
     )
   }
-
   async function salvarFormulario(
     fotosAtuais?: {
       foto1?: {
@@ -1871,7 +1682,6 @@ function App() {
         nome: string
         tipo: string
       } | null
-
       foto2?: {
         base64: string
         nome: string
@@ -1884,7 +1694,6 @@ function App() {
     ) {
       return
     }
-
     try {
       const dados: DadosSalvos = {
         tipoEntrada,
@@ -1896,42 +1705,35 @@ function App() {
         cliente,
         telefone,
         observacao,
-
         foto1Base64:
           fotosAtuais?.foto1?.base64 ??
           (foto1 &&
           foto1.startsWith('data:')
             ? foto1
             : null),
-
         foto1Nome:
           fotosAtuais?.foto1?.nome ??
           arquivoFoto1?.name ??
           null,
-
         foto1Tipo:
           fotosAtuais?.foto1?.tipo ??
           arquivoFoto1?.type ??
           null,
-
         foto2Base64:
           fotosAtuais?.foto2?.base64 ??
           (foto2 &&
           foto2.startsWith('data:')
             ? foto2
             : null),
-
         foto2Nome:
           fotosAtuais?.foto2?.nome ??
           arquivoFoto2?.name ??
           null,
-
         foto2Tipo:
           fotosAtuais?.foto2?.tipo ??
           arquivoFoto2?.type ??
           null,
       }
-
       const existeAlgumDado =
         dados.placa.trim() ||
         dados.modelo.trim() ||
@@ -1943,15 +1745,12 @@ function App() {
         dados.observacao.trim() ||
         dados.foto1Base64 ||
         dados.foto2Base64
-
       if (!existeAlgumDado) {
         localStorage.removeItem(
           STORAGE_KEY,
         )
-
         return
       }
-
       localStorage.setItem(
         STORAGE_KEY,
         JSON.stringify(dados),
@@ -1963,7 +1762,6 @@ function App() {
       )
     }
   }
-
   useEffect(() => {
     async function restaurarFormulario() {
       try {
@@ -1971,29 +1769,23 @@ function App() {
           localStorage.getItem(
             STORAGE_KEY,
           )
-
         if (!salvo) {
           restauracaoConcluida.current =
             true
-
           return
         }
-
         const dados =
           JSON.parse(
             salvo,
           ) as Partial<DadosSalvos>
-
         if (dados.tipoEntrada) {
           setTipoEntrada(
             dados.tipoEntrada,
           )
         }
-
         setPlaca(dados.placa || '')
         setModelo(dados.modelo || '')
         setFrota(dados.frota || '')
-
         setTiposPeca(
           Array.isArray(
             dados.tiposPeca,
@@ -2001,30 +1793,24 @@ function App() {
             ? dados.tiposPeca
             : [],
         )
-
         setDescricaoPeca(
           dados.descricaoPeca ||
             '',
         )
-
         setCliente(
           dados.cliente || '',
         )
-
         setTelefone(
           dados.telefone || '',
         )
-
         setObservacao(
           dados.observacao ||
             '',
         )
-
         if (dados.foto1Base64) {
           setFoto1(
             dados.foto1Base64,
           )
-
           if (
             dados.foto1Nome &&
             dados.foto1Tipo
@@ -2038,12 +1824,10 @@ function App() {
             )
           }
         }
-
         if (dados.foto2Base64) {
           setFoto2(
             dados.foto2Base64,
           )
-
           if (
             dados.foto2Nome &&
             dados.foto2Tipo
@@ -2057,7 +1841,6 @@ function App() {
             )
           }
         }
-
         if (
           dados.placa &&
           dados.placa.length === 7
@@ -2070,7 +1853,6 @@ function App() {
           'ERRO AO RESTAURAR FORMULÁRIO:',
           error,
         )
-
         localStorage.removeItem(
           STORAGE_KEY,
         )
@@ -2079,22 +1861,18 @@ function App() {
           true
       }
     }
-
     void restaurarFormulario()
   }, [])
-
   useEffect(() => {
     if (
       !restauracaoConcluida.current
     ) {
       return
     }
-
     const timer =
       window.setTimeout(() => {
         void salvarFormulario()
       }, 300)
-
     return () => {
       window.clearTimeout(timer)
     }
@@ -2113,61 +1891,47 @@ function App() {
     foto2,
     arquivoFoto2,
   ])
-
   function abrirCamera1() {
     if (enviando) {
       return
     }
-
     cameraInput1Ref.current?.click()
   }
-
   function abrirCamera2() {
     if (enviando) {
       return
     }
-
     cameraInput2Ref.current?.click()
   }
-
   function abrirGaleria1() {
     if (enviando) {
       return
     }
-
     galleryInput1Ref.current?.click()
   }
-
   function abrirGaleria2() {
     if (enviando) {
       return
     }
-
     galleryInput2Ref.current?.click()
   }
-
   async function selecionarFoto1(
     event: ChangeEvent<HTMLInputElement>,
   ) {
     const arquivo =
       event.target.files?.[0]
-
     if (!arquivo) {
       return
     }
-
     try {
       const base64 =
         await arquivoParaBase64(
           arquivo,
         )
-
       setArquivoFoto1(
         arquivo,
       )
-
       setFoto1(base64)
-
       await salvarFormulario({
         foto1: {
           base64,
@@ -2182,19 +1946,16 @@ function App() {
         'ERRO FOTO 1:',
         error,
       )
-
       alert(
         'Não foi possível salvar a primeira foto.',
       )
     }
-
     if (
       cameraInput1Ref.current
     ) {
       cameraInput1Ref.current.value =
         ''
     }
-
     if (
       galleryInput1Ref.current
     ) {
@@ -2202,29 +1963,23 @@ function App() {
         ''
     }
   }
-
   async function selecionarFoto2(
     event: ChangeEvent<HTMLInputElement>,
   ) {
     const arquivo =
       event.target.files?.[0]
-
     if (!arquivo) {
       return
     }
-
     try {
       const base64 =
         await arquivoParaBase64(
           arquivo,
         )
-
       setArquivoFoto2(
         arquivo,
       )
-
       setFoto2(base64)
-
       await salvarFormulario({
         foto2: {
           base64,
@@ -2239,19 +1994,16 @@ function App() {
         'ERRO FOTO 2:',
         error,
       )
-
       alert(
         'Não foi possível salvar a segunda foto.',
       )
     }
-
     if (
       cameraInput2Ref.current
     ) {
       cameraInput2Ref.current.value =
         ''
     }
-
     if (
       galleryInput2Ref.current
     ) {
@@ -2259,7 +2011,6 @@ function App() {
         ''
     }
   }
-
   async function consultarPlaca(
     placaDigitada: string,
   ) {
@@ -2268,23 +2019,18 @@ function App() {
         .trim()
         .toUpperCase()
         .replace(/[^A-Z0-9]/g, '')
-
     if (placaLimpa.length !== 7) {
       return
     }
-
     if (
       ultimaPlacaConsultada.current ===
       placaLimpa
     ) {
       return
     }
-
     ultimaPlacaConsultada.current =
       placaLimpa
-
     setConsultandoPlaca(true)
-
     try {
       const {
         data,
@@ -2307,21 +2053,17 @@ function App() {
         })
         .limit(1)
         .maybeSingle()
-
       if (error) {
         console.error(
           'ERRO AO CONSULTAR PLACA:',
           error,
         )
-
         return
       }
-
       if (!data) {
         return
       }
-
-      setVeiculoEncontrado(
+setVeiculoEncontrado(
         data as VeiculoEncontrado,
       )
 
@@ -2865,14 +2607,13 @@ function App() {
               lineHeight: 1.5,
             }}
           >
-            Para acessar, informe seu código de funcionário e sua senha individual.
+            Informe seu código de funcionário. Marcelo (004), Rodrigo (008) e Talisson (009) também precisam da senha individual.
           </div>
 
           <div className="form-group">
             <label htmlFor="codigoFuncionario">
               CÓDIGO DO FUNCIONÁRIO
             </label>
-
             <input
               id="codigoFuncionario"
               type="text"
@@ -2881,51 +2622,49 @@ function App() {
               autoComplete="username"
               value={codigoFuncionario}
               onChange={event => {
-                const valor = event.target.value
-                  .replace(/\D/g, '')
-                  .slice(0, 3)
-
+                const valor = event.target.value.replace(/\D/g, '').slice(0, 3)
                 setCodigoFuncionario(valor)
+                setSenhaFuncionario('')
                 setErroFuncionario('')
               }}
               onKeyDown={event => {
                 if (event.key === 'Enter') {
                   event.preventDefault()
-                  document.getElementById('senhaFuncionario')?.focus()
+                  if (CODIGOS_COM_SENHA[codigoFuncionario]) {
+                    document.getElementById('senhaFuncionario')?.focus()
+                  } else {
+                    void entrarComoFuncionario(codigoFuncionario)
+                  }
                 }
               }}
               placeholder="Ex.: 004"
               autoFocus
             />
-
-            <small>
-              Digite os 3 números do seu código.
-            </small>
+            <small>Digite os 3 números do seu código.</small>
           </div>
 
-          <div className="form-group">
-            <label htmlFor="senhaFuncionario">
-              SENHA INDIVIDUAL
-            </label>
-
-            <input
-              id="senhaFuncionario"
-              type="password"
-              autoComplete="current-password"
-              value={senhaFuncionario}
-              onChange={event => {
-                setSenhaFuncionario(event.target.value)
-                setErroFuncionario('')
-              }}
-              onKeyDown={event => {
-                if (event.key === 'Enter') {
-                  event.preventDefault()
-                  void entrarComoFuncionario()
-                }
-              }}
-              placeholder="Digite sua senha"
-            />
-          </div>
+          {CODIGOS_COM_SENHA[codigoFuncionario] && (
+            <div className="form-group">
+              <label htmlFor="senhaFuncionario">SENHA INDIVIDUAL</label>
+              <input
+                id="senhaFuncionario"
+                type="password"
+                autoComplete="current-password"
+                value={senhaFuncionario}
+                onChange={event => {
+                  setSenhaFuncionario(event.target.value)
+                  setErroFuncionario('')
+                }}
+                onKeyDown={event => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+                    void entrarComoFuncionario()
+                  }
+                }}
+                placeholder="Digite sua senha"
+              />
+            </div>
+          )}
 
           {erroFuncionario && (
             <div
