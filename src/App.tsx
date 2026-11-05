@@ -1,4 +1,4 @@
-﻿import {
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -769,19 +769,25 @@ function App() {
       ordemAbertaIdAtual,
     ])
   useEffect(() => {
-    if (
-      !funcionario?.id ||
-      telaPrincipal !== 'ordens'
-    ) {
+    const telaComDadosOSAtualizados =
+      telaPrincipal === 'ordens' || telaPrincipal === 'comissoes'
+
+    if (!funcionario?.id || !telaComDadosOSAtualizados) {
       return
     }
+
+    // Busca novamente as OS sempre que abrir Minhas OS ou Minhas Comissões.
+    // Isso garante que a competência manual gravada no painel seja refletida
+    // no resumo do técnico, mesmo sem sair e entrar novamente no aplicativo.
     void carregarMinhasOrdens()
-    // Consulta periodicamente o status real da O.S. no banco.
-    // Isso evita que o PWA continue editável usando um status antigo
-    // depois que o painel encerrou a O.S.
+
+    // Em Minhas OS, sincroniza o status com frequência.
+    // Em Minhas Comissões, atualiza o resumo periodicamente sem sobrecarregar.
+    const intervaloMs = telaPrincipal === 'ordens' ? 5000 : 30000
     const intervalo = window.setInterval(() => {
       void carregarMinhasOrdens(false)
-    }, 5000)
+    }, intervaloMs)
+
     return () => {
       window.clearInterval(intervalo)
     }
