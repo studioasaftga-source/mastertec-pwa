@@ -64,6 +64,7 @@ type OrdemServicoPWA = {
   data_entrada: string
   data_inicio: string | null
   data_conclusao: string | null
+  competencia_comissao: string | null
   observacoes: string | null
   percentual_comissao: number | null
   valor_servicos: number | null
@@ -660,7 +661,7 @@ function App() {
         const {
           data,
           error,
-        } = await supabase.rpc('buscar_minhas_ordens')
+        } = await supabase.rpc('buscar_minhas_ordens_com_competencia')
         if (error) {
           throw error
         }
@@ -691,6 +692,7 @@ function App() {
                   data_inicio,
                   data_conclusao,
                   observacoes,
+                  competencia_comissao,
                   percentual_comissao,
                   valor_servicos,
                   valor_pecas,
@@ -819,10 +821,13 @@ function App() {
     )
     return [...abertas, ...encerradasDoMes]
   }, [minhasOrdens, mesOS])
-  const comissoesDoMes = minhasOrdens.filter(ordem =>
-    statusEntraNaComissao(ordem.status) &&
-    obterMesDaDataCuiaba(ordem.data_entrada) === mesComissao,
-  )
+  const comissoesDoMes = minhasOrdens.filter(ordem => {
+    if (!statusEntraNaComissao(ordem.status)) return false
+    const competencia = ordem.competencia_comissao
+      ? String(ordem.competencia_comissao).slice(0, 7)
+      : obterMesDaDataCuiaba(ordem.data_entrada)
+    return competencia === mesComissao
+  })
   const resumoMinhasComissoes = useMemo(() => {
     const clientesMap = new Map<
       string,
@@ -896,6 +901,7 @@ function App() {
             data_inicio,
             data_conclusao,
             observacoes,
+            competencia_comissao,
             percentual_comissao,
             valor_servicos,
             valor_pecas,
@@ -935,7 +941,7 @@ function App() {
     const {
       data,
       error,
-    } = await supabase.rpc('buscar_minhas_ordens')
+    } = await supabase.rpc('buscar_minhas_ordens_com_competencia')
     if (error) {
       throw error
     }
